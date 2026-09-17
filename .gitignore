@@ -1,0 +1,33 @@
+# Dependencies
+node_modules/
+*/node_modules/
+
+# Production build
+client/dist/
+dist/
+
+# Logs and temporary files
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+vite.config.js.timestamp*
+
+# Environment variables
+.env
+.env.local
+.env.*.local
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# User generated files (uploads and pdfs)
+server/uploads/*
+!server/uploads/.gitkeep
+server/generated_pdfs/*
+!server/generated_pdfs/.gitkeep
+
+# IDE
+.vscode/
+.idea/

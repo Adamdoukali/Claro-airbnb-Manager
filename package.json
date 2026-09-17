@@ -1,0 +1,15 @@
+{
+  "name": "claro-airbnb-manager",
+  "version": "1.0.0",
+  "description": "Claro Airbnb Manager - Airbnb & Booking.com Multi-Calendar Sync & Moroccan Police Automation",
+  "scripts": {
+    "start": "node server/index.js",
+    "build": "npm --prefix client install && npm --prefix client run build && npm --prefix server install",
+    "install:all": "npm --prefix client install && npm --prefix server install",
+    "server": "npm --prefix server run start",
+    "client": "npm --prefix client run dev",
+    "dev:server": "npm --prefix server run dev"
+  },
+  "author": "Claro",
+  "license": "MIT"
+}
