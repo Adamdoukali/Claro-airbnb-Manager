@@ -268,6 +268,7 @@ export default function GuestCheckin({ initialCode, onExitToHost }) {
           nationality: g.nationality,
           idType: g.idType,
           idDocumentPath: g.idDocumentPath,
+          ocrReadable: Boolean(g.ocrReadable),
           address: g.birthPlace || g.nationality || 'Touriste International'
         };
       });

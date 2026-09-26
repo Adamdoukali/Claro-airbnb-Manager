@@ -11,6 +11,7 @@ import {
   Lock,
   User
 } from 'lucide-react';
+import IssuesPanel from './IssuesPanel';
 
 export default function CalendarView({ 
   bookings, 
@@ -19,6 +20,7 @@ export default function CalendarView({
   onSyncClick,
   isSyncing,
   liveStatus,
+  features = {},
   onGeneratePoliceCode,
   onDeleteBooking
 }) {
@@ -380,6 +382,10 @@ export default function CalendarView({
                     Générer Code
                   </button>
                 </div>
+              )}
+
+              {features.issues && selectedBooking.source !== 'blocked' && (
+                <IssuesPanel bookingId={selectedBooking.id} propertyId={selectedBooking.propertyId} />
               )}
             </div>
 

@@ -10,11 +10,14 @@ export default function Header({
   onOpenSettings,
   onOpenAutomation,
   automationActive = false,
+  role = 'admin',
   onOpenHospitable,
   onLogout,
   setActiveTab,
   onSwitchToGuestPortal
 }) {
+  const isAdmin = role === 'admin';
+  const isCleaner = role === 'cleaner';
   return (
     <header className="airbnb-header">
       <div className="header-container">
@@ -34,7 +37,7 @@ export default function Header({
         </div>
 
         {/* Center: property switcher */}
-        <div className="property-switcher">
+        <div className="property-switcher" style={isCleaner ? { visibility: 'hidden' } : undefined}>
           {properties.length > 1 ? (
             <label className="property-capsule" title="Changer de logement">
               <Home size={18} color="#81172E" />
@@ -57,9 +60,11 @@ export default function Header({
               {currentProperty?.city && <span className="property-tag">{currentProperty.city}</span>}
             </div>
           )}
-          <button type="button" className="btn btn-secondary btn-icon btn-sm" onClick={onAddProperty} title="Ajouter un logement">
-            <Plus size={16} />
-          </button>
+          {isAdmin && (
+            <button type="button" className="btn btn-secondary btn-icon btn-sm" onClick={onAddProperty} title="Ajouter un logement">
+              <Plus size={16} />
+            </button>
+          )}
         </div>
 
         {/* Right: actions */}
@@ -71,6 +76,7 @@ export default function Header({
             </a>
           )}
 
+          {isAdmin && (
           <button
             type="button"
             className="btn btn-secondary btn-sm btn-pill"
@@ -81,18 +87,22 @@ export default function Header({
             <Zap size={14} color="#4F46E5" />
             <span>Hospitable</span>
           </button>
+          )}
 
+          {!isCleaner && (
           <button type="button" className="btn btn-rausch btn-sm btn-pill" onClick={onSwitchToGuestPortal} title="Tester le portail voyageur">
             <UserCheck size={16} />
             <span>Portail Voyageur</span>
           </button>
+          )}
 
-          {currentProperty && (
+          {currentProperty && isAdmin && (
             <button type="button" className="btn btn-secondary btn-icon" onClick={onOpenSettings} title="Paramètres du logement et fiches de police">
               <Home size={18} />
             </button>
           )}
 
+          {isAdmin && (
           <button
             type="button"
             className="btn btn-secondary btn-icon"
@@ -105,6 +115,7 @@ export default function Header({
               <span style={{ position: 'absolute', top: 6, right: 6, width: 8, height: 8, borderRadius: '50%', background: '#16A34A', border: '2px solid #FFF' }} aria-label="Automatisations actives" />
             )}
           </button>
+          )}
 
           <button type="button" className="btn btn-secondary btn-icon" onClick={onLogout} title={`Se déconnecter (${user?.email || ''})`}>
             <LogOut size={18} />

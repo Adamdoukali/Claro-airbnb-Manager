@@ -10,10 +10,26 @@ const DB_FILE = path.join(config.serverDir, 'data.json');
 // Collections stored as one row per record (id + jsonb) in Supabase,
 // or as arrays in data.json in local mode.
 const COLLECTIONS = {
-  properties: 'properties',
-  bookings: 'bookings',
-  policeRegistrations: 'police_registrations',
-  syncLogs: 'sync_logs'
+  properties: { table: 'properties' },
+  bookings: { table: 'bookings' },
+  policeRegistrations: { table: 'police_registrations' },
+  syncLogs: { table: 'sync_logs' },
+  // Beta features (no schema change needed): tasks and issues share the sync_logs table,
+  // each row tagged with data._kind so they never mix with the real sync logs.
+  tasks: { table: 'sync_logs', kind: 'task' },
+  issues: { table: 'sync_logs', kind: 'issue' }
+};
+
+/** Beta features: every one is off until switched on in the settings panel. */
+export const DEFAULT_FEATURES = {
+  todayView: false,   // "Aujourd'hui" operations dashboard
+  attention: false,   // "À traiter" alerts (missing forms, unreadable scans, expired codes…)
+  tasks: false,       // cleaning / turnover tasks + cleaner page
+  issues: false,      // guest issues log per booking
+  whatsapp: false,    // WhatsApp quick-send for bookings without a Hospitable thread
+  batchExport: false, // zip export of the day's bulletins
+  multiUser: false,   // additional accounts with roles
+  metrics: false      // occupancy / revenue statistics
 };
 
 export const DEFAULT_GUEST_OFFER = {
@@ -40,7 +56,8 @@ export const DEFAULT_SETTINGS = {
   // Every automated action is opt-in (see automation.js). Controlled from the "Paramètres" panel.
   automation: { ...DEFAULT_AUTOMATION },
   // Recommendation card shown to guests on the final "thank you" page (car rental partner).
-  guestOffer: { ...DEFAULT_GUEST_OFFER }
+  guestOffer: { ...DEFAULT_GUEST_OFFER },
+  features: { ...DEFAULT_FEATURES }
 };
 
 
@@ -51,7 +68,8 @@ export function normalizeSettings(raw = {}) {
     ...DEFAULT_SETTINGS,
     ...rest,
     automation: normalizeAutomation(rest.automation),
-    guestOffer: { ...DEFAULT_GUEST_OFFER, ...(rest.guestOffer && typeof rest.guestOffer === 'object' ? rest.guestOffer : {}) }
+    guestOffer: { ...DEFAULT_GUEST_OFFER, ...(rest.guestOffer && typeof rest.guestOffer === 'object' ? rest.guestOffer : {}) },
+    features: { ...DEFAULT_FEATURES, ...(rest.features && typeof rest.features === 'object' ? rest.features : {}) }
   };
 }
 
@@ -62,6 +80,8 @@ function emptyState() {
     bookings: [],
     policeRegistrations: [],
     syncLogs: [],
+    tasks: [],
+    issues: [],
     users: []
   };
 }
@@ -116,10 +136,18 @@ async function loadFromSupabase() {
   const sb = getSupabase();
   const fresh = emptyState();
 
-  const collectionQueries = Object.entries(COLLECTIONS).map(async ([key, table]) => {
+  // One query per physical table; rows are routed to collections by data._kind.
+  const tables = [...new Set(Object.values(COLLECTIONS).map(c => c.table))];
+  const collectionQueries = tables.map(async (table) => {
     const { data, error } = await sb.from(table).select('id,data').order('created_at', { ascending: true });
     if (error) throw new Error(`Table "${table}" : ${error.message} (exécutez supabase/schema.sql)`);
-    fresh[key] = (data || []).map(row => ({ ...row.data, id: row.id }));
+    for (const row of data || []) {
+      const kind = row.data?._kind || null;
+      const key = Object.keys(COLLECTIONS).find(k => COLLECTIONS[k].table === table && (COLLECTIONS[k].kind || null) === kind);
+      if (!key) continue;
+      const { _kind, ...record } = row.data || {};
+      fresh[key].push({ ...record, id: row.id });
+    }
   });
 
   const settingsQuery = (async () => {
@@ -145,7 +173,7 @@ async function persistToSupabase(db) {
   const now = new Date().toISOString();
   const prevSnap = snapshots.get(db) || {};
 
-  for (const [key, table] of Object.entries(COLLECTIONS)) {
+  for (const [key, { table, kind }] of Object.entries(COLLECTIONS)) {
     const prev = prevSnap[key] || new Map();
     const current = new Set();
     const upserts = [];
@@ -154,7 +182,7 @@ async function persistToSupabase(db) {
       const json = JSON.stringify(record);
       current.add(record.id);
       if (prev.get(record.id) !== json) {
-        upserts.push({ id: record.id, data: record, updated_at: now });
+        upserts.push({ id: record.id, data: kind ? { ...record, _kind: kind } : record, updated_at: now });
       }
     }
     const deletes = [...prev.keys()].filter(id => !current.has(id));
@@ -281,6 +309,24 @@ export async function createUser({ email, passwordHash, role = 'admin' }) {
     await writeDB();
   }
   return user;
+}
+
+export function listUsers() {
+  return readDB().users.map(u => ({ id: u.id, email: u.email, role: u.role, createdAt: u.createdAt }));
+}
+
+export async function deleteUser(userId) {
+  const db = readDB();
+  const idx = db.users.findIndex(u => u.id === userId);
+  if (idx === -1) throw new Error('Utilisateur introuvable');
+  const [removed] = db.users.splice(idx, 1);
+  if (config.useSupabase) {
+    const { error } = await getSupabase().from('users').delete().eq('id', userId);
+    if (error) throw new Error(`Suppression utilisateur : ${error.message}`);
+  } else {
+    await writeDB();
+  }
+  return removed;
 }
 
 export async function updateUserPassword(userId, passwordHash) {

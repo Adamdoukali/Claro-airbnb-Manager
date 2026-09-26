@@ -3,6 +3,7 @@ import { readDB, writeDB } from '../database.js';
 import { requireAuth } from '../auth.js';
 import { deleteRegistrationFiles } from '../registrationService.js';
 import { asyncHandler, newId, randomToken, str } from '../utils.js';
+import { requireRole } from '../features.js';
 
 const router = Router();
 router.use(requireAuth);
@@ -30,7 +31,7 @@ router.get('/', asyncHandler(async (req, res) => {
   res.json(db.properties);
 }));
 
-router.post('/', asyncHandler(async (req, res) => {
+router.post('/', requireRole('admin'), asyncHandler(async (req, res) => {
   const db = readDB();
   const data = sanitize(req.body);
   if (!data.name) return res.status(400).json({ error: 'Le nom du logement est requis' });
@@ -59,7 +60,7 @@ router.post('/', asyncHandler(async (req, res) => {
   res.status(201).json(property);
 }));
 
-router.put('/:id', asyncHandler(async (req, res) => {
+router.put('/:id', requireRole('admin'), asyncHandler(async (req, res) => {
   const db = readDB();
   const property = db.properties.find(p => p.id === req.params.id);
   if (!property) return res.status(404).json({ error: 'Logement introuvable' });
@@ -70,7 +71,7 @@ router.put('/:id', asyncHandler(async (req, res) => {
   res.json(property);
 }));
 
-router.delete('/:id', asyncHandler(async (req, res) => {
+router.delete('/:id', requireRole('admin'), asyncHandler(async (req, res) => {
   const db = readDB();
   const idx = db.properties.findIndex(p => p.id === req.params.id);
   if (idx === -1) return res.status(404).json({ error: 'Logement introuvable' });

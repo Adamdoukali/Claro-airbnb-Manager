@@ -5,6 +5,9 @@ import { requireAuth } from '../auth.js';
 import { config } from '../config.js';
 import { runAutomation } from '../automationRunner.js';
 import { asyncHandler, getBaseUrl } from '../utils.js';
+import { requireRole, isFeatureOn } from '../features.js';
+import { ensureCleaningTasks } from './tasks.js';
+import { readDB, writeDB } from '../database.js';
 
 const router = Router();
 
@@ -24,6 +27,11 @@ function cronOrSession(req, res, next) {
 }
 
 const runHandler = asyncHandler(async (req, res) => {
+  if (isFeatureOn('tasks')) {
+    const db = readDB();
+    const r = ensureCleaningTasks(db);
+    if (r.created || r.removed) await writeDB(db);
+  }
   const report = await runAutomation({
     baseUrl: getBaseUrl(req),
     trigger: req.cron ? 'cron' : 'manual'
@@ -34,7 +42,7 @@ const runHandler = asyncHandler(async (req, res) => {
 router.get('/run', cronOrSession, runHandler);   // Vercel Cron calls with GET
 router.post('/run', cronOrSession, runHandler);
 
-router.post('/preview', requireAuth, asyncHandler(async (req, res) => {
+router.post('/preview', requireAuth, requireRole('admin'), asyncHandler(async (req, res) => {
   const report = await runAutomation({ baseUrl: getBaseUrl(req), trigger: 'preview', dryRun: true });
   res.json({ success: true, report });
 }));

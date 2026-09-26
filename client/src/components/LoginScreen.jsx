@@ -14,7 +14,7 @@ export default function LoginScreen({ onLogin, onGuestAccess }) {
     setLoading(true);
     try {
       const data = await api('/api/auth/login', { method: 'POST', body: { email, password } });
-      onLogin(data.user);
+      onLogin(data.user, data.features);
     } catch (err) {
       setError(err.status === 429 ? 'Trop de tentatives. Réessayez dans quelques minutes.' : err.message);
     } finally {

@@ -1227,3 +1227,71 @@ h1, h2, h3, h4, h5, h6 {
   70% { box-shadow: 0 0 0 7px rgba(22, 163, 74, 0); }
   100% { box-shadow: 0 0 0 0 rgba(22, 163, 74, 0); }
 }
+
+/* ==========================================================================
+   BETA FEATURES: today view, tasks, metrics, issues
+   ========================================================================== */
+.tv-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 16px; }
+.tv-card { background: var(--airbnb-surface); border: 1px solid var(--airbnb-border); border-radius: var(--radius-md); padding: 16px; }
+.tv-card-head { display: flex; align-items: center; gap: 12px; margin-bottom: 10px; }
+.tv-card-icon { width: 38px; height: 38px; border-radius: 10px; display: inline-flex; align-items: center; justify-content: center; flex: 0 0 auto; }
+.tv-card-count { font-size: 1.6rem; font-weight: 800; line-height: 1; }
+.tv-card-title { font-weight: 600; color: var(--airbnb-muted); font-size: 0.9rem; }
+.tv-row { display: flex; align-items: center; gap: 10px; padding: 8px 0; border-top: 1px solid #F3F4F6; flex-wrap: wrap; }
+.tv-row-title { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; font-size: 0.9rem; }
+.tv-badge { display: inline-flex; align-items: center; gap: 4px; font-size: 0.7rem; font-weight: 700; padding: 3px 8px; border-radius: 999px; white-space: nowrap; }
+.tv-badge-green { background: #DCFCE7; color: #166534; }
+.tv-badge-amber { background: #FEF3C7; color: #92400E; }
+.tv-badge-red { background: #FEE2E2; color: #991B1B; }
+.tv-badge-gray { background: #F3F4F6; color: #6B7280; }
+.tv-attention { background: #FFF7F7; border: 1px solid #FECACA; border-radius: var(--radius-md); padding: 14px 16px; margin-bottom: 18px; }
+.tv-attention-ok { background: #F0FDF4; border-color: #BBF7D0; }
+.tv-attention-head { display: flex; align-items: center; gap: 8px; color: #991B1B; margin-bottom: 4px; flex-wrap: wrap; }
+.tv-attention-ok .tv-attention-head { color: #166534; }
+.tv-attention-item { display: flex; align-items: center; gap: 10px; padding: 8px 0; border-top: 1px solid #FEE2E2; font-size: 0.88rem; flex-wrap: wrap; }
+.tv-sev-dot { width: 9px; height: 9px; border-radius: 50%; background: #9CA3AF; flex: 0 0 9px; }
+.sev-high .tv-sev-dot { background: #DC2626; }
+.sev-medium .tv-sev-dot { background: #F59E0B; }
+.sev-low .tv-sev-dot { background: #60A5FA; }
+.tv-filter { display: inline-flex; background: #F3F4F6; border-radius: 999px; padding: 3px; }
+.tv-filter-btn { border: none; background: transparent; padding: 5px 12px; border-radius: 999px; font-size: 0.8rem; font-weight: 600; color: #6B7280; cursor: pointer; }
+.tv-filter-btn.on { background: #FFFFFF; color: #222; box-shadow: 0 1px 2px rgba(0,0,0,0.1); }
+
+.task-list { display: flex; flex-direction: column; gap: 12px; }
+.task-card { background: var(--airbnb-surface); border: 1px solid var(--airbnb-border); border-radius: var(--radius-md); padding: 14px 16px; display: flex; flex-direction: column; gap: 10px; }
+.task-card.task-urgent { border-color: #FECACA; }
+.task-card.task-done { opacity: 0.7; }
+.task-main { display: flex; gap: 14px; align-items: flex-start; }
+.task-date { flex: 0 0 52px; text-align: center; background: #FDF2F4; border-radius: 10px; padding: 6px 0; color: #81172E; }
+.task-date-day { font-size: 1.3rem; font-weight: 800; line-height: 1; }
+.task-date-month { font-size: 0.7rem; text-transform: uppercase; font-weight: 700; }
+.task-title { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-size: 0.95rem; }
+.task-progress { height: 6px; background: #F3F4F6; border-radius: 999px; margin: 8px 0 4px; overflow: hidden; }
+.task-progress-bar { height: 100%; background: #16A34A; border-radius: 999px; transition: width 0.2s; }
+.task-actions { display: flex; gap: 6px; flex-wrap: wrap; }
+.task-actions .btn { text-decoration: none; }
+.task-edit { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 8px; align-items: center; }
+.task-edit .form-input { padding: 8px 10px; font-size: 0.85rem; }
+.cleaner-checklist { display: flex; flex-direction: column; gap: 8px; }
+.cleaner-check { display: flex; align-items: center; gap: 10px; padding: 12px; border: 1px solid var(--airbnb-border); border-radius: 12px; font-size: 1rem; cursor: pointer; background: #FAFAFA; }
+.cleaner-check input { position: absolute; opacity: 0; pointer-events: none; }
+.cleaner-check.on { background: #F0FDF4; border-color: #86EFAC; text-decoration: line-through; color: #166534; }
+.cleaner-check.on .property-pick-check { background: #16A34A; border-color: #16A34A; color: #FFF; }
+
+.metrics-bars { display: flex; gap: 6px; align-items: flex-end; height: 150px; margin-top: 8px; }
+.metrics-bar-col { flex: 1; display: flex; flex-direction: column; align-items: center; height: 100%; }
+.metrics-bar { flex: 1; width: 100%; background: #F3F4F6; border-radius: 6px; display: flex; align-items: flex-end; overflow: hidden; }
+.metrics-bar-fill { width: 100%; background: linear-gradient(180deg, #9E1B38, #81172E); border-radius: 6px 6px 0 0; transition: height 0.3s; }
+.metrics-bar-value { font-size: 0.68rem; font-weight: 700; color: #6B7280; margin-bottom: 4px; }
+.metrics-bar-label { font-size: 0.68rem; color: #6B7280; margin-top: 4px; }
+.metrics-table { width: 100%; border-collapse: collapse; font-size: 0.82rem; }
+.metrics-table th, .metrics-table td { padding: 8px 10px; border-bottom: 1px solid var(--airbnb-border); text-align: center; }
+.metrics-table th:first-child, .metrics-table td:first-child { text-align: left; }
+.metrics-table th { background: var(--airbnb-light-gray); font-size: 0.72rem; text-transform: uppercase; color: var(--airbnb-muted); }
+.metrics-cell { font-weight: 600; min-width: 44px; }
+
+.issue-row { display: flex; align-items: center; gap: 10px; padding: 8px 0; border-top: 1px solid #FED7AA; font-size: 0.85rem; }
+.issue-row.issue-resolved { opacity: 0.65; }
+.export-bar { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; background: #F8FAFC; border: 1px solid #E2E8F0; border-radius: 10px; padding: 6px 10px; }
+.users-table { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
+.users-table td, .users-table th { padding: 6px 8px; border-bottom: 1px solid var(--airbnb-border); text-align: left; }

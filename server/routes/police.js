@@ -9,6 +9,7 @@ import { upsertRegistration, deleteRegistrationFiles } from '../registrationServ
 import { saveFile, readFile, isValidKey } from '../storage.js';
 import { guestLimiter, ocrLimiter, imageUpload } from '../middleware.js';
 import { asyncHandler, getBaseUrl, newId, portalUrl, str } from '../utils.js';
+import { requireFeature, requireRole } from '../features.js';
 
 /** Routes used by guests (no session), rate limited. Mounted before the host router. */
 export const guestPoliceRouter = Router();
@@ -99,6 +100,7 @@ guestPoliceRouter.post('/submit', guestLimiter, imageUpload.single('idDocument')
   const guests = (Array.isArray(parsed.guests) ? parsed.guests : [parsed]).slice(0, 10).map(g => {
     const out = {};
     for (const f of GUEST_FIELDS) if (g[f] !== undefined) out[f] = str(g[f], 200);
+    if (g.ocrReadable !== undefined) out.ocrReadable = Boolean(g.ocrReadable);
     if (out.idDocumentPath && !isValidKey(out.idDocumentPath)) delete out.idDocumentPath;
     return out;
   });
@@ -267,7 +269,52 @@ hostPoliceRouter.get('/pdf/:id', asyncHandler(async (req, res) => {
   res.send(buffer);
 }));
 
-hostPoliceRouter.delete('/registrations/:id', asyncHandler(async (req, res) => {
+/**
+ * Beta "batchExport": one zip with every completed bulletin for a day (arrival date) or a date range,
+ * optionally limited to a property. Meant for handing the day's forms to the authorities in one go.
+ */
+hostPoliceRouter.get('/export', requireFeature('batchExport'), asyncHandler(async (req, res) => {
+  const { default: JSZip } = await import('jszip');
+  const db = readDB();
+  const from = str(req.query.from, 10) || str(req.query.date, 10);
+  const to = str(req.query.to, 10) || from;
+  const propertyId = str(req.query.propertyId, 100);
+  const by = req.query.by === 'completed' ? 'completed' : 'checkIn';
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(from) || !/^\d{4}-\d{2}-\d{2}$/.test(to)) {
+    return res.status(400).json({ error: 'Paramètres date=AAAA-MM-JJ (ou from/to) requis' });
+  }
+
+  const selected = db.policeRegistrations.filter(r => {
+    if (r.status !== 'completed' || !r.pdfPath) return false;
+    if (propertyId && r.propertyId !== propertyId) return false;
+    const booking = r.bookingId ? db.bookings.find(b => b.id === r.bookingId) : null;
+    const key = by === 'completed' ? String(r.completedAt || '').slice(0, 10) : (booking?.checkIn || r.guestDetails?.commonStay?.arrivalDate || '');
+    return key >= from && key <= to;
+  });
+  if (!selected.length) return res.status(404).json({ error: 'Aucun bulletin complété pour cette période' });
+
+  const zip = new JSZip();
+  const manifest = [];
+  for (const r of selected) {
+    const buffer = await readFile(r.pdfPath);
+    if (!buffer) continue;
+    const property = db.properties.find(p => p.id === r.propertyId);
+    const booking = r.bookingId ? db.bookings.find(b => b.id === r.bookingId) : null;
+    const safe = s => String(s || '').normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^A-Za-z0-9]+/g, '_').replace(/^_|_$/g, '').slice(0, 40);
+    const name = `${booking?.checkIn || 'sans_date'}_${safe(property?.name)}_${safe(r.guestName)}_${r.accessCode}.pdf`;
+    zip.file(name, buffer);
+    manifest.push(`${name}\t${r.guestName}\t${property?.name || ''}\t${booking?.checkIn || ''}\t${booking?.checkOut || ''}\t${r.guestDetails?.totalGuests || 1} voyageur(s)`);
+  }
+  zip.file('index.txt', ['fichier\tvoyageur\tlogement\tarrivee\tdepart\tvoyageurs', ...manifest].join('\n'));
+
+  const out = await zip.generateAsync({ type: 'nodebuffer', compression: 'DEFLATE' });
+  const fileName = `bulletins_${from}${to !== from ? `_${to}` : ''}${propertyId ? '_' + propertyId : ''}.zip`;
+  res.setHeader('Content-Type', 'application/zip');
+  res.setHeader('Content-Disposition', `attachment; filename="${fileName}"`);
+  res.send(out);
+}));
+
+hostPoliceRouter.delete('/registrations/:id', requireRole('admin', 'assistant'), asyncHandler(async (req, res) => {
   const db = readDB();
   const idx = db.policeRegistrations.findIndex(r => r.id === req.params.id);
   if (idx === -1) return res.status(404).json({ error: 'Fiche introuvable' });

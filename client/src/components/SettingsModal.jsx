@@ -1,9 +1,20 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import {
   SlidersHorizontal, MessageSquare, BellRing, RefreshCw, Languages, Home, Check,
-  AlertTriangle, Eye, Play, Clock, ShieldCheck, Lock, Car
+  AlertTriangle, Eye, Play, Clock, ShieldCheck, Lock, Car, FlaskConical, Users
 } from 'lucide-react';
 import { api } from '../api';
+
+const FEATURE_LIST = [
+  { key: 'todayView', title: "Vue « Aujourd'hui »", description: "Tableau de bord quotidien façon Hospitable : arrivées, départs, rotations le même jour, voyageurs sur place et 7 prochains jours, tous logements confondus." },
+  { key: 'attention', title: 'Alertes « À traiter »', description: "Dans la vue Aujourd'hui : arrivées sous 48 h sans enregistrement, pièces d'identité saisies à la main, codes expirés, réservations sans messagerie. Avec renvoi du lien en 1 clic." },
+  { key: 'tasks', title: 'Ménage & tâches', description: 'Une tâche de ménage créée automatiquement pour chaque départ (urgente si rotation le jour même), assignable à une personne, avec une page checklist sans connexion pour le personnel.' },
+  { key: 'issues', title: 'Incidents voyageurs', description: 'Journal des incidents par réservation (casse, bruit, caution, réclamation) depuis la fiche de la réservation, avec montant et résolution.' },
+  { key: 'whatsapp', title: 'Envoi WhatsApp rapide', description: "Dans les alertes : bouton WhatsApp pré-rempli pour les réservations directes qui n'ont pas de messagerie Hospitable." },
+  { key: 'batchExport', title: 'Export groupé pour les autorités', description: 'Dans les fiches : télécharger en un zip tous les bulletins complétés pour une période (par logement ou tous).' },
+  { key: 'multiUser', title: 'Comptes multiples & rôles', description: 'Créer des comptes assistant (sans paramètres) et ménage (tâches uniquement). La gestion des comptes apparaît ci-dessous une fois activée et enregistrée.' },
+  { key: 'metrics', title: 'Statistiques', description: "Taux d'occupation, nuits et revenus par logement et par mois." }
+];
 
 const DEFAULT_AUTOMATION = {
   autoMessageEnabled: false,
@@ -61,6 +72,32 @@ function FeatureRow({ icon, title, description, checked, onChange, disabled, chi
 export default function SettingsModal({ properties = [], onClose }) {
   const [automation, setAutomation] = useState(DEFAULT_AUTOMATION);
   const [offer, setOffer] = useState({ enabled: true, title: '', agencyName: '', description: '', mapsUrl: '', phone: '', whatsapp: '' });
+  const [features, setFeatures] = useState({});
+  const [users, setUsers] = useState(null);
+  const [newUser, setNewUser] = useState({ email: '', password: '', role: 'assistant' });
+  const [userError, setUserError] = useState('');
+
+  const loadUsers = () => api('/api/users').then(d => setUsers(d.users)).catch(() => setUsers(null));
+  const addUser = async (e) => {
+    e.preventDefault();
+    setUserError('');
+    try {
+      await api('/api/users', { method: 'POST', body: newUser });
+      setNewUser({ email: '', password: '', role: 'assistant' });
+      await loadUsers();
+    } catch (err) {
+      setUserError(err.message);
+    }
+  };
+  const removeUser = async (u) => {
+    if (!window.confirm(`Supprimer le compte ${u.email} ?`)) return;
+    try { await api(`/api/users/${u.id}`, { method: 'DELETE' }); await loadUsers(); } catch (err) { setUserError(err.message); }
+  };
+  const resetUserPassword = async (u) => {
+    const password = window.prompt(`Nouveau mot de passe pour ${u.email} (10 caractères min.) :`);
+    if (!password) return;
+    try { await api(`/api/users/${u.id}/password`, { method: 'PUT', body: { password } }); alert('Mot de passe mis à jour.'); } catch (err) { setUserError(err.message); }
+  };
   const [defaultLanguage, setDefaultLanguage] = useState('fr');
   const [hospitableConnected, setHospitableConnected] = useState(false);
   const [status, setStatus] = useState(null);
@@ -77,6 +114,8 @@ export default function SettingsModal({ properties = [], onClose }) {
       .then(([s, st]) => {
         setAutomation({ ...DEFAULT_AUTOMATION, ...(s.automation || {}) });
         if (s.guestOffer) setOffer(prev => ({ ...prev, ...s.guestOffer }));
+        setFeatures(s.features || {});
+        if (s.features?.multiUser) loadUsers();
         setDefaultLanguage(s.defaultLanguage || 'fr');
         setHospitableConnected(Boolean(s.hospitableConnected && s.hasKey));
         setStatus(st);
@@ -110,6 +149,7 @@ export default function SettingsModal({ properties = [], onClose }) {
         body: {
           defaultLanguage,
           guestOffer: offer,
+          features,
           automation: {
             autoMessageEnabled: automation.autoMessageEnabled,
             autoMessagePropertyIds: automation.autoMessagePropertyIds,
@@ -123,6 +163,8 @@ export default function SettingsModal({ properties = [], onClose }) {
         }
       });
       setAutomation({ ...DEFAULT_AUTOMATION, ...(data.settings?.automation || {}) });
+      setFeatures(data.settings?.features || features);
+      if (data.settings?.features?.multiUser) loadUsers();
       setSaved(true);
       setTimeout(() => setSaved(false), 1800);
     } catch (err) {
@@ -372,7 +414,75 @@ export default function SettingsModal({ properties = [], onClose }) {
                 </div>
               </FeatureRow>
 
-              {/* 6. Always-on safeguards */}
+              {/* 6. Beta features (each behind its own switch, off by default) */}
+              <div className="feature-row" style={{ borderColor: '#C7D2FE' }}>
+                <div className="feature-head">
+                  <div className="feature-icon" style={{ background: '#EEF2FF', color: '#4338CA' }}><FlaskConical size={18} /></div>
+                  <div style={{ flex: 1 }}>
+                    <div className="feature-title">Fonctionnalités (bêta) <span className="feature-badge">{Object.values(features).filter(Boolean).length} / {FEATURE_LIST.length} actives</span></div>
+                    <div className="text-xs text-muted">Chaque fonctionnalité est indépendante et désactivée par défaut. Une fonctionnalité désactivée est aussi bloquée côté serveur. Enregistrez pour appliquer.</div>
+                  </div>
+                </div>
+                <div className="feature-body" style={{ display: 'grid', gap: 10 }}>
+                  {FEATURE_LIST.map(fd => (
+                    <div key={fd.key} style={{ display: 'flex', alignItems: 'flex-start', gap: 10 }}>
+                      <Toggle checked={Boolean(features[fd.key])} onChange={v => setFeatures(p => ({ ...p, [fd.key]: v }))} label={fd.title} />
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ fontWeight: 700, fontSize: '0.88rem' }}>{fd.title} {features[fd.key] && <span className="feature-badge" style={{ background: '#DCFCE7', color: '#166534' }}>Actif</span>}</div>
+                        <div className="text-xs text-muted">{fd.description}</div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {features.multiUser && (
+                <div className="feature-row">
+                  <div className="feature-head">
+                    <div className="feature-icon" style={{ background: '#F0FDF4', color: '#15803D' }}><Users size={18} /></div>
+                    <div style={{ flex: 1 }}>
+                      <div className="feature-title">Comptes utilisateurs</div>
+                      <div className="text-xs text-muted">Admin : tout. Assistant : réservations, fiches, tâches et incidents, sans les paramètres ni Hospitable. Ménage : uniquement les tâches qui lui sont assignées (par email).</div>
+                    </div>
+                  </div>
+                  <div className="feature-body">
+                    {userError && <div className="text-xs" style={{ color: '#B91C1C', marginBottom: 8 }}>{userError}</div>}
+                    {users === null ? (
+                      <div className="text-xs text-muted">Enregistrez d'abord pour activer la gestion des comptes.</div>
+                    ) : (
+                      <table className="users-table">
+                        <thead><tr><th>Email</th><th>Rôle</th><th></th></tr></thead>
+                        <tbody>
+                          {users.map(u => (
+                            <tr key={u.id}>
+                              <td>{u.email}</td>
+                              <td><span className="feature-badge">{u.role}</span></td>
+                              <td style={{ textAlign: 'right', whiteSpace: 'nowrap' }}>
+                                <button type="button" className="btn btn-secondary btn-sm" onClick={() => resetUserPassword(u)}>Mot de passe</button>{' '}
+                                <button type="button" className="btn btn-secondary btn-sm" style={{ color: '#B91C1C' }} onClick={() => removeUser(u)}>Supprimer</button>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    )}
+                    {users !== null && (
+                      <form onSubmit={addUser} style={{ display: 'grid', gridTemplateColumns: '2fr 2fr 1fr auto', gap: 8, marginTop: 12, alignItems: 'center' }}>
+                        <input type="email" required className="form-input" placeholder="email@exemple.com" value={newUser.email} onChange={e => setNewUser(p => ({ ...p, email: e.target.value }))} style={{ padding: '8px 10px' }} />
+                        <input type="text" required minLength={10} className="form-input" placeholder="Mot de passe (10 min.)" value={newUser.password} onChange={e => setNewUser(p => ({ ...p, password: e.target.value }))} style={{ padding: '8px 10px' }} />
+                        <select className="form-input" value={newUser.role} onChange={e => setNewUser(p => ({ ...p, role: e.target.value }))} style={{ padding: '8px 10px' }}>
+                          <option value="admin">admin</option>
+                          <option value="assistant">assistant</option>
+                          <option value="cleaner">ménage</option>
+                        </select>
+                        <button type="submit" className="btn btn-rausch btn-sm">Ajouter</button>
+                      </form>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {/* 7. Always-on safeguards */}
               <div className="feature-row" style={{ background: '#FAFAFA' }}>
                 <div className="feature-head">
                   <div className="feature-icon" style={{ background: '#F1F5F9', color: '#475569' }}><Lock size={18} /></div>

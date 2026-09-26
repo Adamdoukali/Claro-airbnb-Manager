@@ -8,7 +8,7 @@ import fs from 'fs';
 import { config } from './config.js';
 import { initDB, refreshDB } from './database.js';
 import { initStorage } from './storage.js';
-import { attachUser, ensureAdminUser } from './auth.js';
+import { attachUser, ensureAdminUser, requireAuth } from './auth.js';
 import { errorHandler } from './middleware.js';
 import { asyncHandler } from './utils.js';
 
@@ -19,6 +19,11 @@ import { bookingsRouter, calendarRouter, publicCalendarRouter } from './routes/b
 import { guestPoliceRouter, hostPoliceRouter } from './routes/police.js';
 import { webhookRouter, hostHospitableRouter } from './routes/hospitable.js';
 import automationRoutes from './routes/automation.js';
+import dashboardRoutes from './routes/dashboard.js';
+import { hostTasksRouter, publicTasksRouter } from './routes/tasks.js';
+import issuesRoutes from './routes/issues.js';
+import usersRoutes from './routes/users.js';
+import { CLEANER_ALLOWED, requireRole } from './features.js';
 
 /**
  * Build the Express app. Used by server/index.js (long-running process) and
@@ -80,11 +85,20 @@ export async function createApp({ serveClient = true } = {}) {
 
   app.use('/api', attachUser);
 
+  // A cleaner account only ever reaches its tasks and its own session.
+  app.use('/api', (req, res, next) => {
+    if (req.user?.role === 'cleaner' && !CLEANER_ALLOWED.some(rx => rx.test(req.originalUrl.split('?')[0]))) {
+      return res.status(403).json({ error: 'Accès réservé : compte de ménage limité aux tâches' });
+    }
+    next();
+  });
+
   // Public / guest routes (rate limited inside the routers)
   app.use('/api/auth', authRoutes);
   app.use('/api/police', guestPoliceRouter);
   app.use('/api/calendar', publicCalendarRouter);
   app.use('/api/integrations/hospitable', webhookRouter);
+  app.use('/api/tasks', publicTasksRouter); // cleaner page by token (feature-gated)
 
   // Host routes (session required inside each router)
   app.use('/api/properties', propertiesRoutes);
@@ -92,8 +106,12 @@ export async function createApp({ serveClient = true } = {}) {
   app.use('/api/calendar', calendarRouter);
   app.use('/api/police', hostPoliceRouter);
   app.use('/api/settings', settingsRoutes);
-  app.use('/api/integrations/hospitable', hostHospitableRouter);
+  app.use('/api/integrations/hospitable', requireAuth, requireRole('admin'), hostHospitableRouter);
   app.use('/api/automation', automationRoutes); // session or CRON_SECRET (checked inside)
+  app.use('/api/dashboard', dashboardRoutes);   // beta: today view, metrics
+  app.use('/api/tasks', hostTasksRouter);       // beta: cleaning tasks
+  app.use('/api/issues', issuesRoutes);         // beta: guest issues
+  app.use('/api/users', usersRoutes);           // beta: multi-user
 
   app.all('/api/*', (_req, res) => res.status(404).json({ error: 'Route introuvable' }));
 

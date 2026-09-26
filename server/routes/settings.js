@@ -6,6 +6,7 @@ import { requireAuth } from '../auth.js';
 import { config } from '../config.js';
 import { checkPdfEngine } from '../pdfService.js';
 import { AUTO_MESSAGE_TIMINGS, clampInt, normalizeAutomation } from '../automation.js';
+import { FEATURE_KEYS, getFeatures, requireRole } from '../features.js';
 import { asyncHandler, str } from '../utils.js';
 
 const router = Router();
@@ -25,12 +26,12 @@ export function publicSettings(settings) {
   };
 }
 
-router.get('/', (req, res) => {
+router.get('/', requireRole('admin', 'assistant'), (req, res) => {
   res.json(publicSettings(getSettings()));
 });
 
 /** Host-only health report: storage mode, PDF engine, OCR language data. */
-router.get('/diagnostics', asyncHandler(async (_req, res) => {
+router.get('/diagnostics', requireRole('admin'), asyncHandler(async (_req, res) => {
   const pdf = await checkPdfEngine();
   res.json({
     storage: config.useSupabase ? 'supabase' : 'local',
@@ -41,9 +42,16 @@ router.get('/diagnostics', asyncHandler(async (_req, res) => {
   });
 }));
 
-router.put('/', asyncHandler(async (req, res) => {
+router.put('/', requireRole('admin'), asyncHandler(async (req, res) => {
   const body = req.body || {};
   const patch = {};
+
+  // Beta feature switches (all off by default). Only known keys, only booleans.
+  if (body.features && typeof body.features === 'object') {
+    const next = { ...getFeatures() };
+    for (const k of FEATURE_KEYS) if (body.features[k] !== undefined) next[k] = Boolean(body.features[k]);
+    patch.features = next;
+  }
 
   if (body.hospitableApiKey !== undefined) {
     patch.hospitableApiKey = str(body.hospitableApiKey, 500);

@@ -22,8 +22,17 @@ export default function PoliceDashboard({
   property, 
   onOpenCodeGenerator,
   onOpenGuestPortalWithCode,
-  onRefresh
+  onRefresh,
+  features = {}
 }) {
+  const [exportFrom, setExportFrom] = useState(new Date().toISOString().slice(0, 10));
+  const [exportTo, setExportTo] = useState(new Date().toISOString().slice(0, 10));
+  const [exportAll, setExportAll] = useState(false);
+  const exportZip = () => {
+    const q = new URLSearchParams({ from: exportFrom, to: exportTo || exportFrom });
+    if (!exportAll && property?.id) q.set('propertyId', property.id);
+    window.location.href = `/api/police/export?${q.toString()}`;
+  };
   const [copiedCode, setCopiedCode] = useState(null);
   const [previewReg, setPreviewReg] = useState(null);
   const [messageReg, setMessageReg] = useState(null);
@@ -138,14 +147,29 @@ export default function PoliceDashboard({
           </p>
         </div>
 
-        <button 
-          type="button" 
-          onClick={onOpenCodeGenerator} 
-          className="btn btn-rausch"
-        >
-          <UserPlus size={18} />
-          <span>Générer un Code Voyageur</span>
-        </button>
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 8 }}>
+          <button
+            type="button"
+            onClick={onOpenCodeGenerator}
+            className="btn btn-rausch"
+          >
+            <UserPlus size={18} />
+            <span>Générer un Code Voyageur</span>
+          </button>
+
+          {features.batchExport && (
+            <div className="export-bar" title="Télécharger en un zip tous les bulletins complétés dont l'arrivée est dans la période">
+              <span className="text-xs text-muted" style={{ fontWeight: 600 }}>Export pour les autorités :</span>
+              <input type="date" className="form-input" style={{ width: 'auto', padding: '4px 8px', fontSize: '0.8rem' }} value={exportFrom} onChange={e => setExportFrom(e.target.value)} />
+              <span className="text-xs text-muted">→</span>
+              <input type="date" className="form-input" style={{ width: 'auto', padding: '4px 8px', fontSize: '0.8rem' }} value={exportTo} onChange={e => setExportTo(e.target.value)} />
+              <label className="text-xs" style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                <input type="checkbox" checked={exportAll} onChange={e => setExportAll(e.target.checked)} /> tous les logements
+              </label>
+              <button type="button" className="btn btn-secondary btn-sm" onClick={exportZip}>📦 Exporter (zip)</button>
+            </div>
+          )}
+        </div>
       </div>
 
       {/* KPI Stats Cards */}

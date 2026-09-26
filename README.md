@@ -43,6 +43,22 @@ Chaque automatisation est un interrupteur indépendant, **désactivé par défau
 - **Aperçu** (« qui recevrait un message ? ») : simulation sans envoi ; **Lancer un passage maintenant** exécute réellement.
 - Planificateur : Vercel Cron (`vercel.json`, toutes les minutes, `GET /api/automation/run` protégé par `CRON_SECRET`) ou minuterie interne (`AUTOMATION_INTERVAL_MINUTES`) sur un serveur classique.
 
+### 7. 🧪 Fonctionnalités bêta (drapeaux)
+Dans **Paramètres > Fonctionnalités (bêta)**, chaque fonctionnalité a son propre interrupteur, **désactivé par défaut**. Une fonctionnalité désactivée est masquée dans l'interface **et** ses routes API répondent 404.
+
+| Drapeau | Ce qu'il active |
+|---|---|
+| `todayView` | Onglet **Aujourd'hui** : arrivées, départs, rotations le même jour, voyageurs sur place, 7 prochains jours (tous logements). |
+| `attention` | Bloc **À traiter** : arrivées sous 48 h sans enregistrement, pièces d'identité saisies à la main, codes expirés, réservations sans messagerie, incidents ouverts. Renvoi du lien en 1 clic. |
+| `tasks` | Onglet **Ménage & Tâches** : tâche créée automatiquement par départ (urgente si rotation), assignation, page checklist sans connexion (`/?taskToken=…`). |
+| `issues` | **Incidents** par réservation (fiche de la réservation dans le calendrier). |
+| `whatsapp` | Bouton WhatsApp pré-rempli dans les alertes pour les réservations sans messagerie Hospitable. |
+| `batchExport` | Dans les fiches : **Exporter (zip)** tous les bulletins complétés d'une période (`GET /api/police/export?from=&to=&propertyId=`). |
+| `multiUser` | **Comptes** admin / assistant / ménage (`/api/users`). Assistant : sans paramètres ni Hospitable ; ménage : tâches assignées uniquement. |
+| `metrics` | Onglet **Statistiques** : occupation, nuits et revenus par logement et par mois. |
+
+Les tâches et incidents sont stockés dans la table `sync_logs` (lignes marquées `_kind`) : aucune migration Supabase n'est nécessaire.
+
 ---
 
 ## 🔐 Accès Sécurisé (Espace Hôte)
