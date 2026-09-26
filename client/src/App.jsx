@@ -42,6 +42,7 @@ export default function App() {
   const [isHospitableOpen, setIsHospitableOpen] = useState(false);
   const [isAutomationOpen, setIsAutomationOpen] = useState(false);
   const [automationActive, setAutomationActive] = useState(false);
+  const [liveStatus, setLiveStatus] = useState(null); // { lastSyncAt, lastWebhookAt, autoSyncEnabled, scheduler }
   const [isAddBookingOpen, setIsAddBookingOpen] = useState(false);
   const [isGenerateCodeOpen, setIsGenerateCodeOpen] = useState(false);
   const [selectedBookingForCode, setSelectedBookingForCode] = useState(null);
@@ -97,7 +98,25 @@ export default function App() {
         setAutomationActive(Boolean(a.autoMessageEnabled || a.reminderEnabled || a.autoSyncEnabled));
       })
       .catch(() => {});
+    api('/api/automation/status').then(setLiveStatus).catch(() => {});
   }, []);
+
+  // Live dashboard: while the tab is visible, re-read bookings/registrations every 30 s so
+  // changes pushed by the Hospitable webhook or the every-minute sync show up without a reload.
+  const currentPropertyRef = React.useRef(null);
+  currentPropertyRef.current = currentProperty;
+  useEffect(() => {
+    if (authStatus !== 'authenticated') return undefined;
+    const tick = () => {
+      if (document.visibilityState !== 'visible') return;
+      const prop = currentPropertyRef.current;
+      if (prop) loadPropertyData(prop).catch(() => {});
+      api('/api/automation/status').then(setLiveStatus).catch(() => {});
+    };
+    const timer = setInterval(tick, 30000);
+    document.addEventListener('visibilitychange', tick);
+    return () => { clearInterval(timer); document.removeEventListener('visibilitychange', tick); };
+  }, [authStatus, loadPropertyData]);
 
   const fetchData = useCallback(async (preferredId) => {
     try {
@@ -318,6 +337,7 @@ export default function App() {
                 onAddBookingClick={(dateStr) => { setAddBookingInitialDate(dateStr || null); setIsAddBookingOpen(true); }}
                 onSyncClick={handleTriggerSync}
                 isSyncing={isSyncing}
+                liveStatus={liveStatus}
                 onGeneratePoliceCode={(booking) => { setSelectedBookingForCode(booking || null); setIsGenerateCodeOpen(true); }}
                 onDeleteBooking={handleDeleteBooking}
               />

@@ -10,7 +10,7 @@
     }
   },
   "crons": [
-    { "path": "/api/automation/run", "schedule": "0 * * * *" }
+    { "path": "/api/automation/run", "schedule": "* * * * *" }
   ],
   "rewrites": [
     { "source": "/api/:path*", "destination": "/api/index" },

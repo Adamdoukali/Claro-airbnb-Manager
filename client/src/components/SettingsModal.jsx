@@ -311,7 +311,7 @@ export default function SettingsModal({ properties = [], onClose }) {
                 accent="#0369A1"
                 title="Synchronisation Hospitable automatique"
                 badge={automation.autoSyncEnabled ? 'Actif' : 'Désactivé'}
-                description="Récupère automatiquement les nouvelles réservations Airbnb / Booking toutes les heures (en plus du webhook). Nécessaire pour que les messages partent sans intervention si le webhook n'est pas configuré."
+                description="Récupère automatiquement les nouvelles réservations Airbnb / Booking toutes les minutes (en plus du webhook). Nécessaire pour que les messages partent sans intervention si le webhook n'est pas configuré."
                 checked={automation.autoSyncEnabled}
                 onChange={v => patch({ autoSyncEnabled: v })}
               />
@@ -401,6 +401,11 @@ export default function SettingsModal({ properties = [], onClose }) {
                   {automation.lastRunAt && (
                     <span className="text-xs text-muted">· Dernier passage : {new Date(automation.lastRunAt).toLocaleString('fr-FR')}</span>
                   )}
+                </div>
+                <div className="text-xs" style={{ marginTop: 6, color: status?.lastWebhookAt ? '#166534' : '#92400E' }}>
+                  {status?.lastWebhookAt
+                    ? `Webhook Hospitable actif · dernière réservation reçue en temps réel le ${new Date(status.lastWebhookAt).toLocaleString('fr-FR')}`
+                    : 'Webhook Hospitable : aucune réception pour l\'instant. Pour le temps réel (à la seconde), ajoutez l\'URL du menu Hospitable dans Hospitable > Settings > Apps & API > Webhooks.'}
                 </div>
                 {lastReport && (
                   <div className="text-xs text-muted" style={{ marginTop: 4 }}>

@@ -39,7 +39,7 @@ async function runAutomationOnce({ baseUrl = '', trigger = 'manual', dryRun = fa
       report.errors.push('Synchronisation : clé API Hospitable absente.');
     } else {
       try {
-        const r = await syncHospitableReservations({ baseUrl });
+        const r = await syncHospitableReservations({ baseUrl, logOnlyChanges: true });
         report.sync = {
           totalReservations: r.totalReservations, addedCount: r.addedCount,
           updatedCount: r.updatedCount, autoMessagesSent: r.autoMessagesSent

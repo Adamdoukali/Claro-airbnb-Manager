@@ -40,14 +40,18 @@ router.post('/preview', requireAuth, asyncHandler(async (req, res) => {
 }));
 
 router.get('/status', requireAuth, (_req, res) => {
-  const a = getSettings().automation || {};
+  const settings = getSettings();
+  const a = settings.automation || {};
   res.json({
     scheduler: config.isServerless
       ? (config.cronSecret ? 'vercel-cron' : 'none')
       : (config.automationIntervalMinutes > 0 ? 'interval' : 'none'),
-    intervalMinutes: config.isServerless ? 60 : config.automationIntervalMinutes,
+    intervalMinutes: config.isServerless ? 1 : config.automationIntervalMinutes,
     cronSecretConfigured: Boolean(config.cronSecret),
     webhookSecretConfigured: Boolean(config.hospitableWebhookSecret),
+    lastWebhookAt: settings.lastWebhookAt || null,
+    lastSyncAt: settings.lastGlobalSync || null,
+    autoSyncEnabled: Boolean(a.autoSyncEnabled),
     lastRunAt: a.lastRunAt || null,
     lastRunReport: a.lastRunReport || null
   });

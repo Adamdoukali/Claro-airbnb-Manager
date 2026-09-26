@@ -39,9 +39,9 @@ L'application combine la **synchronisation de calendriers multi-canaux (Airbnb &
 Chaque automatisation est un interrupteur indépendant, **désactivé par défaut** :
 - **Message automatique de check-in** : lien + code envoyés dans la messagerie Airbnb/Booking via Hospitable, sans clic. Uniquement pour les **logements cochés**, une seule fois par réservation, arrivées à venir seulement. Moment configurable (dès la réservation, ou X jours avant l'arrivée). Les réservations importées avant l'activation sont ignorées sauf si « Inclure les réservations déjà importées » est coché.
 - **Rappel** : court message si la fiche n'est toujours pas complétée X jours avant l'arrivée (une seule fois).
-- **Synchronisation Hospitable automatique** : import horaire des nouvelles réservations.
+- **Synchronisation Hospitable automatique** : import des nouvelles réservations toutes les minutes.
 - **Aperçu** (« qui recevrait un message ? ») : simulation sans envoi ; **Lancer un passage maintenant** exécute réellement.
-- Planificateur : Vercel Cron (`vercel.json`, toutes les heures, `GET /api/automation/run` protégé par `CRON_SECRET`) ou minuterie interne (`AUTOMATION_INTERVAL_MINUTES`) sur un serveur classique.
+- Planificateur : Vercel Cron (`vercel.json`, toutes les minutes, `GET /api/automation/run` protégé par `CRON_SECRET`) ou minuterie interne (`AUTOMATION_INTERVAL_MINUTES`) sur un serveur classique.
 
 ---
 
@@ -120,7 +120,7 @@ Le bucket privé `claro-files` est créé automatiquement s'il n'existe pas. Auc
 | `HOSPITABLE_API_KEY` | non | Token Hospitable (peut aussi être saisi dans l'interface) |
 | `HOSPITABLE_WEBHOOK_SECRET` | conseillé | Vérifie la signature HMAC-SHA256 des webhooks Hospitable |
 | `CRON_SECRET` | Vercel | Jeton envoyé par Vercel Cron à `GET /api/automation/run` (`openssl rand -hex 24`) |
-| `AUTOMATION_INTERVAL_MINUTES` | non | Serveur classique : fréquence du passage automatique (défaut 60 en production, 0 = désactivé) |
+| `AUTOMATION_INTERVAL_MINUTES` | non | Serveur classique : fréquence du passage automatique en minutes (défaut 1 en production, 0 = désactivé) |
 | `CHROME_PATH` | non | Chemin vers Chrome/Edge/Chromium pour un rendu PDF fidèle (sinon repli `pdf-lib`) |
 | `CORS_ORIGINS` | non | Origines supplémentaires autorisées (séparées par des virgules) |
 

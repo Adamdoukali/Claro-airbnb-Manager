@@ -16,11 +16,19 @@ export default function CalendarView({
   bookings, 
   property, 
   onAddBookingClick, 
-  onSyncClick, 
+  onSyncClick,
   isSyncing,
+  liveStatus,
   onGeneratePoliceCode,
   onDeleteBooking
 }) {
+  // "Live" pill: green when the scheduler synced (or a webhook arrived) in the last few minutes.
+  const lastLiveAt = [liveStatus?.lastSyncAt, liveStatus?.lastWebhookAt].filter(Boolean).sort().pop() || null;
+  const liveAgeMin = lastLiveAt ? Math.max(0, Math.round((Date.now() - Date.parse(lastLiveAt)) / 60000)) : null;
+  const isLive = Boolean(liveStatus?.autoSyncEnabled && liveStatus?.scheduler !== 'none') || (liveAgeMin !== null && liveAgeMin <= 5);
+  const liveLabel = liveAgeMin === null
+    ? 'Aucune synchro'
+    : liveAgeMin === 0 ? "synchro à l'instant" : liveAgeMin < 60 ? `synchro il y a ${liveAgeMin} min` : `synchro il y a ${Math.round(liveAgeMin / 60)} h`;
   const [currentDate, setCurrentDate] = useState(new Date());
   const [selectedBooking, setSelectedBooking] = useState(null);
 
@@ -170,8 +178,19 @@ export default function CalendarView({
             </div>
           </div>
 
+          {/* Live indicator */}
+          <span
+            className={`live-pill ${isLive ? 'on' : ''}`}
+            title={isLive
+              ? `Synchronisation automatique active${liveStatus?.lastWebhookAt ? ' · webhook Hospitable reçu' : ''}`
+              : 'Synchronisation automatique inactive : activez-la dans Paramètres & Automatisations'}
+          >
+            <span className="live-dot" />
+            <span>{isLive ? 'Live' : 'Hors ligne'} · {liveLabel}</span>
+          </span>
+
           {/* Sync Button */}
-          <button 
+          <button
             type="button" 
             onClick={onSyncClick} 
             className="btn btn-secondary btn-sm"

@@ -208,7 +208,7 @@ export async function syncPropertiesFromHospitable(apiKey) {
  * Pull reservations from Hospitable for the linked properties and mirror them locally.
  * Each new confirmed booking gets a police registration + access code.
  */
-export async function syncHospitableReservations({ apiKey, propertyId = null, baseUrl } = {}) {
+export async function syncHospitableReservations({ apiKey, propertyId = null, baseUrl, logOnlyChanges = false } = {}) {
   const token = getActiveHospitableApiKey(apiKey);
   if (!token) throw missingKey();
 
@@ -313,16 +313,19 @@ export async function syncHospitableReservations({ apiKey, propertyId = null, ba
     }
   }
 
-  db.syncLogs.unshift({
-    id: newId('log'),
-    propertyId: propertyId || 'all',
-    timestamp: new Date().toISOString(),
-    source: 'hospitable',
-    status: 'success',
-    message: `Sync Hospitable : ${reservations.length} reçues, ${addedCount} créées, ${updatedCount} mises à jour, ${unchangedCount} inchangées, ${skippedCount} ignorées.`,
-    eventsCount: reservations.length
-  });
-  db.syncLogs = db.syncLogs.slice(0, 50);
+  // The scheduler runs every minute: only log passes that actually changed something.
+  if (!logOnlyChanges || addedCount || updatedCount || autoMessagesSent) {
+    db.syncLogs.unshift({
+      id: newId('log'),
+      propertyId: propertyId || 'all',
+      timestamp: new Date().toISOString(),
+      source: 'hospitable',
+      status: 'success',
+      message: `Sync Hospitable : ${reservations.length} reçues, ${addedCount} créées, ${updatedCount} mises à jour, ${unchangedCount} inchangées, ${skippedCount} ignorées.`,
+      eventsCount: reservations.length
+    });
+    db.syncLogs = db.syncLogs.slice(0, 50);
+  }
   db.settings = { ...db.settings, lastGlobalSync: new Date().toISOString(), hospitableConnected: true };
 
   await writeDB(db);
@@ -376,8 +379,11 @@ export async function handleHospitableWebhook(body, baseUrl) {
   const r = normalizeReservation(raw);
   const db = readDB();
   const settings = db.settings;
+  // Remember the last delivery so the dashboard can show that the real-time channel is alive.
+  db.settings = { ...db.settings, lastWebhookAt: new Date().toISOString() };
   const property = db.properties.find(p => r.propertyIds.includes(p.hospitableId));
   if (!property) {
+    await writeDB(db);
     return { success: false, message: `Aucun logement local lié à la propriété Hospitable ${r.propertyIds.join(',') || '?'}` };
   }
 

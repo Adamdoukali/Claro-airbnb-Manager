@@ -55,13 +55,13 @@ export const config = {
   hospitableApiKey: env.HOSPITABLE_API_KEY || '',
   hospitableWebhookSecret: env.HOSPITABLE_WEBHOOK_SECRET || '',
 
-  // Scheduler. On Vercel, Cron Jobs call GET /api/automation/run with "Bearer CRON_SECRET".
+  // Scheduler. On Vercel, Cron Jobs call GET /api/automation/run every minute with "Bearer CRON_SECRET".
   // On a long-running server an internal timer runs every AUTOMATION_INTERVAL_MINUTES (0 = off,
-  // default 60 in production and off in development).
+  // default 1 in production and off in development).
   cronSecret: (env.CRON_SECRET || '').trim(),
   automationIntervalMinutes: env.AUTOMATION_INTERVAL_MINUTES !== undefined
     ? Math.max(0, Number(env.AUTOMATION_INTERVAL_MINUTES) || 0)
-    : (isProd ? 60 : 0),
+    : (isProd ? 1 : 0),
 
   // Optional explicit browser binary for HTML -> PDF rendering
   chromePath: env.CHROME_PATH || '',

@@ -1204,3 +1204,26 @@ h1, h2, h3, h4, h5, h6 {
 .guest-offer-text { font-size: 0.82rem; color: #57534E; margin: 6px 0 10px; line-height: 1.45; }
 .guest-offer-actions { display: flex; flex-wrap: wrap; gap: 8px; }
 .guest-offer-actions .btn { text-decoration: none; }
+
+/* Live sync indicator (calendar header) */
+.live-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 10px;
+  border-radius: 999px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  background: #F3F4F6;
+  color: #6B7280;
+  border: 1px solid #E5E7EB;
+  white-space: nowrap;
+}
+.live-pill.on { background: #F0FDF4; color: #166534; border-color: #BBF7D0; }
+.live-dot { width: 8px; height: 8px; border-radius: 50%; background: #9CA3AF; }
+.live-pill.on .live-dot { background: #16A34A; box-shadow: 0 0 0 0 rgba(22, 163, 74, 0.6); animation: livePulse 1.8s ease-out infinite; }
+@keyframes livePulse {
+  0% { box-shadow: 0 0 0 0 rgba(22, 163, 74, 0.55); }
+  70% { box-shadow: 0 0 0 7px rgba(22, 163, 74, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(22, 163, 74, 0); }
+}
