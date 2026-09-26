@@ -9,17 +9,46 @@ import {
   Camera, 
   User, 
   UserPlus, 
-  Trash2, 
-  FileText, 
-  PenTool, 
+  Trash2,
+  PenTool,
   Home, 
   Check, 
   AlertCircle, 
   Users,
-  Key 
+  Key,
+  Car,
+  MapPin,
+  Phone,
+  MessageCircle
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import SignaturePad from './SignaturePad';
+import { api } from '../api';
+
+/**
+ * Shrink a photo before upload: phones produce 5-12 MB images, the server only needs
+ * ~1600px for OCR and hosting platforms cap request bodies (Vercel: 4.5 MB).
+ */
+async function compressImage(file, { maxSize = 1600, quality = 0.85 } = {}) {
+  if (!file.type.startsWith('image/')) return file;
+  try {
+    const bitmap = await createImageBitmap(file);
+    const scale = Math.min(1, maxSize / Math.max(bitmap.width, bitmap.height));
+    if (scale === 1 && file.size < 1.5 * 1024 * 1024) return file;
+
+    const canvas = document.createElement('canvas');
+    canvas.width = Math.round(bitmap.width * scale);
+    canvas.height = Math.round(bitmap.height * scale);
+    canvas.getContext('2d').drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+
+    const blob = await new Promise(resolve => canvas.toBlob(resolve, 'image/jpeg', quality));
+    if (!blob) return file;
+    return new File([blob], file.name.replace(/\.[^.]+$/, '') + '.jpg', { type: 'image/jpeg' });
+  } catch (err) {
+    console.warn('Image compression skipped:', err);
+    return file;
+  }
+}
 
 export default function GuestCheckin({ initialCode, onExitToHost }) {
   const [step, setStep] = useState(1);
@@ -28,6 +57,7 @@ export default function GuestCheckin({ initialCode, onExitToHost }) {
   const [error, setError] = useState('');
   const [propertyData, setPropertyData] = useState(null);
   const [bookingData, setBookingData] = useState(null);
+  const [offer, setOffer] = useState(null); // partner recommendation shown on the final page
 
   // List of guests: each has a fullName, document details, and photo
   const [guests, setGuests] = useState([
@@ -42,12 +72,13 @@ export default function GuestCheckin({ initialCode, onExitToHost }) {
       nationality: '',
       idType: 'passport',
       ocrScanned: false,
+      ocrReadable: false,
+      ocrStatus: 'idle', // idle | scanning | readable | unreadable
       isScanning: false
     }
   ]);
 
   const [signatureData, setSignatureData] = useState(null);
-  const [submittedPdfUrl, setSubmittedPdfUrl] = useState(null);
 
   // Verify access code
   useEffect(() => {
@@ -66,14 +97,12 @@ export default function GuestCheckin({ initialCode, onExitToHost }) {
     setError('');
 
     try {
-      const res = await fetch(`/api/police/verify/${cleanCode}`);
-      const data = await res.json();
-      if (!res.ok) {
-        throw new Error(data.error || "Code de réservation invalide");
-      }
+      const data = await api(`/api/police/verify/${encodeURIComponent(cleanCode)}`);
 
+      setCode(cleanCode);
       setPropertyData(data.property);
       setBookingData(data.booking);
+      setOffer(data.offer || null);
 
       // Pre-fill primary guest full name if host provided it
       if (data.guestName && !guests[0].fullName) {
@@ -107,6 +136,8 @@ export default function GuestCheckin({ initialCode, onExitToHost }) {
         nationality: '',
         idType: 'passport',
         ocrScanned: false,
+        ocrReadable: false,
+        ocrStatus: 'idle',
         isScanning: false
       }
     ]);
@@ -145,58 +176,70 @@ export default function GuestCheckin({ initialCode, onExitToHost }) {
     // Set loading for this specific guest
     setGuests(prev => {
       const updated = [...prev];
-      updated[index].isScanning = true;
+      updated[index] = { ...updated[index], isScanning: true, ocrStatus: 'scanning' };
       return updated;
     });
     setError('');
 
     try {
+      const uploadFile = await compressImage(file);
       const uploadData = new FormData();
-      uploadData.append('idDocument', file);
+      uploadData.append('idDocument', uploadFile);
+      uploadData.append('code', code.trim().toUpperCase());
 
-      const res = await fetch('/api/police/ocr', {
-        method: 'POST',
-        body: uploadData
-      });
-      const resJson = await res.json();
+      const resJson = await api('/api/police/ocr', { method: 'POST', formData: uploadData });
 
-      if (!res.ok) {
-        throw new Error(resJson.error || "Erreur de lecture OCR");
-      }
+      const d = (resJson.success && resJson.data) || {};
+      // "Readable" = the police form can be filled from the scan: an ID number plus a birth date or surname.
+      const readable = Boolean(d.idNumber && (d.birthDate || d.lastName));
 
-      if (resJson.success && resJson.data) {
-        const d = resJson.data;
-        setGuests(prev => {
-          const updated = [...prev];
-          const curr = updated[index];
-          
-          // Auto-fill full name if not already entered
-          const extractedFullName = `${d.firstName || ''} ${d.lastName || ''}`.trim();
-          
-          updated[index] = {
-            ...curr,
-            fullName: curr.fullName || extractedFullName,
-            idNumber: d.idNumber || curr.idNumber,
-            birthDate: d.birthDate || curr.birthDate,
-            birthPlace: d.birthPlace || curr.birthPlace,
-            nationality: d.nationality || curr.nationality,
-            idType: d.documentType === 'cin' ? 'cin' : 'passport',
-            idDocumentPath: resJson.filePath || curr.idDocumentPath,
-            ocrScanned: true,
-            isScanning: false
-          };
-          return updated;
-        });
-      }
-    } catch (err) {
-      console.warn("OCR recognition error:", err);
       setGuests(prev => {
         const updated = [...prev];
-        updated[index].isScanning = false;
+        const curr = updated[index];
+        const extractedFullName = `${d.firstName || ''} ${d.lastName || ''}`.trim();
+
+        updated[index] = {
+          ...curr,
+          fullName: curr.fullName || extractedFullName,
+          idNumber: d.idNumber || curr.idNumber,
+          birthDate: d.birthDate || curr.birthDate,
+          birthPlace: d.birthPlace || curr.birthPlace,
+          nationality: d.nationality || curr.nationality,
+          idType: d.documentType === 'cin' ? 'cin' : 'passport',
+          idDocumentPath: resJson.filePath || curr.idDocumentPath,
+          ocrScanned: true,
+          ocrReadable: readable,
+          ocrStatus: readable ? 'readable' : 'unreadable',
+          isScanning: false
+        };
+        return updated;
+      });
+    } catch (err) {
+      console.warn("OCR recognition error:", err);
+      setError(err.message || "Lecture du document impossible. Reprenez la photo.");
+      setGuests(prev => {
+        const updated = [...prev];
+        updated[index] = { ...updated[index], isScanning: false, ocrStatus: updated[index].idDocumentPath ? 'unreadable' : 'idle' };
         return updated;
       });
     }
   };
+
+  // Manual correction of the fields the police form needs (fallback when the OCR is unreadable)
+  const handleGuestFieldChange = (index, field, value) => {
+    setGuests(prev => {
+      const updated = [...prev];
+      updated[index] = { ...updated[index], [field]: value };
+      return updated;
+    });
+  };
+
+  // A guest is ready for the signature step once the scan is finished AND the data is usable
+  const isGuestReady = (g) =>
+    !g.isScanning && Boolean(g.idDocumentPath) && (g.ocrReadable || Boolean(g.idNumber && g.birthDate));
+  const isScanningAny = guests.some(g => g.isScanning);
+  const allGuestsReady = guests.every(isGuestReady);
+  const missingGuests = guests.filter(g => !isGuestReady(g));
 
   // Submit all guests with 1 single signature
   const handleSubmitAll = async () => {
@@ -214,10 +257,17 @@ export default function GuestCheckin({ initialCode, onExitToHost }) {
         const parts = (g.fullName || '').trim().split(' ');
         const lastName = parts.length > 1 ? parts[parts.length - 1] : parts[0] || 'Voyageur';
         const firstName = parts.length > 1 ? parts.slice(0, parts.length - 1).join(' ') : '';
+        // Only the fields the server needs: never send the base64 image preview.
         return {
-          ...g,
+          fullName: g.fullName,
           lastName,
           firstName,
+          idNumber: g.idNumber,
+          birthDate: g.birthDate,
+          birthPlace: g.birthPlace,
+          nationality: g.nationality,
+          idType: g.idType,
+          idDocumentPath: g.idDocumentPath,
           address: g.birthPlace || g.nationality || 'Touriste International'
         };
       });
@@ -238,18 +288,9 @@ export default function GuestCheckin({ initialCode, onExitToHost }) {
       submitForm.append('guestData', JSON.stringify(payload));
       submitForm.append('signatureData', signatureData);
 
-      const res = await fetch('/api/police/submit', {
-        method: 'POST',
-        body: submitForm
-      });
+      await api('/api/police/submit', { method: 'POST', formData: submitForm });
 
-      const resData = await res.json();
-      if (!res.ok) {
-        throw new Error(resData.error || "Erreur lors de l'enregistrement");
-      }
-
-      setSubmittedPdfUrl(resData.registration?.pdfUrl);
-      setStep(5); // Success screen
+      setStep(5); // Thank-you screen (the generated document stays with the host, never offered to the guest)
 
       try {
         confetti({
@@ -284,7 +325,7 @@ export default function GuestCheckin({ initialCode, onExitToHost }) {
             <span style={{ fontWeight: 800, color: '#81172E', fontSize: '1rem' }}>airbnb</span>
           </div>
           <span style={{ fontSize: '0.72rem', background: '#FDF2F4', color: '#81172E', border: '1px solid #F5D5DC', padding: '2px 8px', borderRadius: 12, fontWeight: 600 }}>
-            Fiche Police
+            Check-in en ligne
           </span>
         </div>
 
@@ -350,7 +391,7 @@ export default function GuestCheckin({ initialCode, onExitToHost }) {
               </div>
               <h2 style={{ fontSize: '1.4rem', fontWeight: 800 }}>Enregistrement Voyageur</h2>
               <p className="text-muted text-sm" style={{ marginTop: 4 }}>
-                Fiche officielle de police touristique (DGSN Maroc)
+                Enregistrement des voyageurs avant l'arrivée (obligatoire au Maroc)
               </p>
             </div>
 
@@ -503,10 +544,10 @@ export default function GuestCheckin({ initialCode, onExitToHost }) {
           <div className="wizard-step-body">
             <div style={{ marginBottom: 18 }}>
               <h3 style={{ fontSize: '1.25rem', fontWeight: 800, marginBottom: 4 }}>
-                Scanner les pièces d'identité
+                Pièces d'identité
               </h3>
               <p className="text-muted text-sm">
-                Prenez en photo le passeport ou la carte nationale (CIN) pour chaque voyageur. Toutes les informations sont capturées automatiquement.
+                Pour chaque voyageur, prenez en photo le passeport ou la carte nationale (CIN), ou importez une photo depuis votre galerie ou vos fichiers. Les informations sont lues automatiquement.
               </p>
             </div>
 
@@ -516,11 +557,11 @@ export default function GuestCheckin({ initialCode, onExitToHost }) {
                 <div 
                   key={g.id}
                   style={{
-                    background: g.ocrScanned ? '#F0FDF4' : '#FDF2F4',
-                    border: `1.5px ${g.ocrScanned ? 'solid #86EFAC' : 'dashed #81172E'}`,
+                    background: isGuestReady(g) ? '#F0FDF4' : g.ocrStatus === 'unreadable' ? '#FFF7ED' : g.isScanning ? '#F8FAFC' : '#FDF2F4',
+                    border: `1.5px ${isGuestReady(g) ? 'solid #86EFAC' : g.ocrStatus === 'unreadable' ? 'solid #FDBA74' : g.isScanning ? 'solid #CBD5E1' : 'dashed #81172E'}`,
                     borderRadius: 14,
-                    padding: 16
-
+                    padding: 16,
+                    transition: 'background 0.2s, border-color 0.2s'
                   }}
                 >
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
@@ -528,31 +569,57 @@ export default function GuestCheckin({ initialCode, onExitToHost }) {
                       <div className="font-bold text-base" style={{ color: '#222222' }}>
                         {idx + 1}. {g.fullName || `Voyageur ${idx + 1}`}
                       </div>
-                      <div className="text-xs text-muted">
-                        {g.ocrScanned ? "Document numérisé avec succès ✅" : "Passeport ou Carte Nationale requis"}
+                      <div className="text-xs" style={{ color: g.isScanning ? '#475569' : g.ocrStatus === 'unreadable' && !isGuestReady(g) ? '#C2410C' : isGuestReady(g) ? '#166534' : '#717171', fontWeight: g.isScanning ? 600 : 400 }}>
+                        {g.isScanning
+                          ? "⏳ Lecture du document en cours…"
+                          : isGuestReady(g)
+                            ? "Document lu avec succès ✅"
+                            : g.ocrStatus === 'unreadable'
+                              ? "⚠️ Document illisible : reprenez la photo (à plat, bien éclairée, sans reflet) ou complétez ci-dessous"
+                              : "Passeport ou Carte Nationale requis"}
                       </div>
                     </div>
 
-                    {/* Scan/Upload Button */}
-                    <label 
-                      className={`btn ${g.ocrScanned ? 'btn-secondary' : 'btn-rausch'} btn-sm`}
-                      style={{ cursor: g.isScanning ? 'not-allowed' : 'pointer' }}
-                    >
-                      <Camera size={15} />
-                      <span>{g.isScanning ? "Lecture..." : g.ocrScanned ? "Reprendre photo" : "Scanner / Photo"}</span>
-                      <input
-                        type="file"
-                        accept="image/*"
-                        capture="environment"
-                        disabled={g.isScanning}
-                        onChange={(e) => {
-                          if (e.target.files && e.target.files[0]) {
-                            handleScanForGuest(idx, e.target.files[0]);
-                          }
-                        }}
-                        style={{ display: 'none' }}
-                      />
-                    </label>
+                    {/* Camera (phone) + file/gallery upload (phone gallery, desktop files) */}
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 6, alignItems: 'stretch', flex: '0 0 auto' }}>
+                      <label
+                        className={`btn ${g.ocrScanned ? 'btn-secondary' : 'btn-rausch'} btn-sm`}
+                        style={{ cursor: g.isScanning ? 'not-allowed' : 'pointer', justifyContent: 'flex-start' }}
+                        title="Prendre une photo avec l'appareil photo"
+                      >
+                        <Camera size={15} />
+                        <span>{g.isScanning ? 'Lecture...' : g.ocrScanned ? 'Reprendre la photo' : 'Prendre une photo'}</span>
+                        <input
+                          type="file"
+                          accept="image/*"
+                          capture="environment"
+                          disabled={g.isScanning}
+                          onChange={(e) => {
+                            if (e.target.files && e.target.files[0]) handleScanForGuest(idx, e.target.files[0]);
+                            e.target.value = '';
+                          }}
+                          style={{ display: 'none' }}
+                        />
+                      </label>
+                      <label
+                        className="btn btn-secondary btn-sm"
+                        style={{ cursor: g.isScanning ? 'not-allowed' : 'pointer', justifyContent: 'flex-start' }}
+                        title="Choisir une image depuis la galerie ou les fichiers"
+                      >
+                        <Upload size={15} />
+                        <span>Importer (galerie / fichier)</span>
+                        <input
+                          type="file"
+                          accept="image/jpeg,image/png,image/webp,image/*"
+                          disabled={g.isScanning}
+                          onChange={(e) => {
+                            if (e.target.files && e.target.files[0]) handleScanForGuest(idx, e.target.files[0]);
+                            e.target.value = '';
+                          }}
+                          style={{ display: 'none' }}
+                        />
+                      </label>
+                    </div>
                   </div>
 
                   {/* Scanned Image Preview */}
@@ -566,8 +633,46 @@ export default function GuestCheckin({ initialCode, onExitToHost }) {
                     </div>
                   )}
 
+                  {/* Manual completion when the scan could not be read */}
+                  {g.ocrStatus === 'unreadable' && !g.isScanning && (
+                    <div style={{ marginTop: 12, display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+                      <div className="form-group" style={{ marginBottom: 0 }}>
+                        <label className="form-label" style={{ fontSize: '0.75rem' }}>N° passeport / CIN *</label>
+                        <input
+                          type="text"
+                          className="form-input"
+                          style={{ padding: '8px 10px', fontSize: '0.9rem', textTransform: 'uppercase' }}
+                          value={g.idNumber}
+                          onChange={(e) => handleGuestFieldChange(idx, 'idNumber', e.target.value.toUpperCase())}
+                          placeholder="Ex: AB123456"
+                        />
+                      </div>
+                      <div className="form-group" style={{ marginBottom: 0 }}>
+                        <label className="form-label" style={{ fontSize: '0.75rem' }}>Date de naissance *</label>
+                        <input
+                          type="date"
+                          className="form-input"
+                          style={{ padding: '8px 10px', fontSize: '0.9rem' }}
+                          value={g.birthDate}
+                          onChange={(e) => handleGuestFieldChange(idx, 'birthDate', e.target.value)}
+                        />
+                      </div>
+                      <div className="form-group" style={{ marginBottom: 0, gridColumn: '1 / -1' }}>
+                        <label className="form-label" style={{ fontSize: '0.75rem' }}>Nationalité</label>
+                        <input
+                          type="text"
+                          className="form-input"
+                          style={{ padding: '8px 10px', fontSize: '0.9rem' }}
+                          value={g.nationality}
+                          onChange={(e) => handleGuestFieldChange(idx, 'nationality', e.target.value)}
+                          placeholder="Ex: Française"
+                        />
+                      </div>
+                    </div>
+                  )}
+
                   {/* Extracted badges */}
-                  {g.ocrScanned && (
+                  {isGuestReady(g) && (
                     <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 10 }}>
                       {g.idNumber && (
                         <span style={{ background: '#DCFCE7', color: '#166534', padding: '2px 8px', borderRadius: 6, fontSize: '0.75rem', fontWeight: 600 }}>
@@ -601,17 +706,30 @@ export default function GuestCheckin({ initialCode, onExitToHost }) {
                 <span>Retour aux noms</span>
               </button>
 
-              <button 
-                type="button" 
-                onClick={() => {
-                  setError('');
-                  setStep(4); // Go to Signature
-                }} 
-                className="btn btn-rausch"
-              >
-                <span>Passer à la signature</span>
-                <ArrowRight size={16} />
-              </button>
+              <div style={{ textAlign: 'right' }}>
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (!allGuestsReady) return;
+                    setError('');
+                    setStep(4); // Go to Signature
+                  }}
+                  className="btn btn-rausch"
+                  disabled={!allGuestsReady}
+                  style={!allGuestsReady ? { opacity: 0.5, cursor: 'not-allowed' } : {}}
+                  title={allGuestsReady ? '' : 'Scannez la pièce d\'identité de chaque voyageur pour continuer'}
+                >
+                  <span>{isScanningAny ? 'Lecture en cours…' : 'Passer à la signature'}</span>
+                  <ArrowRight size={16} />
+                </button>
+                {!allGuestsReady && (
+                  <div className="text-xs" style={{ marginTop: 8, color: '#C2410C', maxWidth: 300 }}>
+                    {isScanningAny
+                      ? 'Patientez pendant la lecture du document…'
+                      : `Document manquant ou illisible pour : ${missingGuests.map((g) => g.fullName || `Voyageur ${guests.indexOf(g) + 1}`).join(', ')}`}
+                  </div>
+                )}
+              </div>
             </div>
           </div>
         )}
@@ -659,7 +777,7 @@ export default function GuestCheckin({ initialCode, onExitToHost }) {
                 className="btn btn-rausch"
                 disabled={loading || !signatureData}
               >
-                <span>{loading ? "Génération du PDF..." : "Valider et Télécharger"}</span>
+                <span>{loading ? "Enregistrement…" : "Valider mon enregistrement"}</span>
                 <Check size={16} />
               </button>
             </div>
@@ -686,10 +804,10 @@ export default function GuestCheckin({ initialCode, onExitToHost }) {
             </div>
 
             <h2 style={{ fontSize: '1.45rem', fontWeight: 800, marginBottom: 8 }}>
-              Enregistrement Validé !
+              Merci, votre enregistrement est terminé !
             </h2>
             <p style={{ fontSize: '0.95rem', color: '#484848', marginBottom: 20 }}>
-              La fiche de police pour les <strong>{guests.length} voyageur(s)</strong> a été générée en <strong>1 seul PDF</strong> avec votre signature unique.
+              Les informations des <strong>{guests.length} voyageur(s)</strong> ont bien été transmises à votre hôte. Vous n'avez plus rien à faire : il ne vous reste qu'à profiter de votre séjour. 🇲🇦
             </p>
 
             <div style={{ background: '#F8F9FA', border: '1px solid #EBEBEB', borderRadius: 12, padding: 18, marginBottom: 24, textAlign: 'left' }}>
@@ -709,18 +827,37 @@ export default function GuestCheckin({ initialCode, onExitToHost }) {
               </div>
             </div>
 
-            {submittedPdfUrl && (
-              <a 
-                href={submittedPdfUrl} 
-                target="_blank" 
-                rel="noopener noreferrer" 
-                className="btn btn-rausch"
-                style={{ width: '100%', marginBottom: 12 }}
-              >
-                <FileText size={16} />
-                <span>Télécharger la Fiche de Police Unique (PDF)</span>
-              </a>
+            {offer && (offer.mapsUrl || offer.phone || offer.whatsapp) && (
+              <div className="guest-offer-card">
+                <div className="guest-offer-icon"><Car size={22} /></div>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div className="guest-offer-title">{offer.title || 'Besoin d\'une voiture ?'}</div>
+                  <div className="guest-offer-agency">{offer.agencyName}</div>
+                  {offer.description && <p className="guest-offer-text">{offer.description}</p>}
+                  <div className="guest-offer-actions">
+                    {offer.mapsUrl && (
+                      <a href={offer.mapsUrl} target="_blank" rel="noopener noreferrer" className="btn btn-rausch btn-sm">
+                        <MapPin size={14} /> Voir l'agence sur Google Maps
+                      </a>
+                    )}
+                    {offer.phone && (
+                      <a href={`tel:${offer.phone.replace(/[^+\d]/g, '')}`} className="btn btn-secondary btn-sm">
+                        <Phone size={14} /> {offer.phone}
+                      </a>
+                    )}
+                    {offer.whatsapp && (
+                      <a href={`https://wa.me/${offer.whatsapp.replace(/[^\d]/g, '')}`} target="_blank" rel="noopener noreferrer" className="btn btn-secondary btn-sm" style={{ color: '#128C7E' }}>
+                        <MessageCircle size={14} /> WhatsApp
+                      </a>
+                    )}
+                  </div>
+                </div>
+              </div>
             )}
+
+            <p className="text-xs text-muted" style={{ marginBottom: 16 }}>
+              Vous pouvez fermer cette page. Pour toute question, contactez votre hôte via votre messagerie de réservation.
+            </p>
 
             {onExitToHost && (
               <button 

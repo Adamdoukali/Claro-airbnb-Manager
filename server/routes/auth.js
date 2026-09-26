@@ -1,0 +1,36 @@
+import { Router } from 'express';
+import { authenticate, changePassword, signSession, setSessionCookie, clearSessionCookie, requireAuth } from '../auth.js';
+import { loginLimiter } from '../middleware.js';
+import { asyncHandler, str } from '../utils.js';
+
+const router = Router();
+
+router.post('/login', loginLimiter, asyncHandler(async (req, res) => {
+  const email = str(req.body?.email, 200).toLowerCase();
+  const password = String(req.body?.password || '');
+  if (!email || !password) {
+    return res.status(400).json({ error: 'Email et mot de passe requis' });
+  }
+  const user = await authenticate(email, password);
+  if (!user) {
+    return res.status(401).json({ error: 'Email ou mot de passe incorrect' });
+  }
+  setSessionCookie(res, signSession(user));
+  res.json({ user: { id: user.id, email: user.email, role: user.role } });
+}));
+
+router.post('/logout', (req, res) => {
+  clearSessionCookie(res);
+  res.json({ success: true });
+});
+
+router.get('/me', (req, res) => {
+  res.json({ user: req.user || null });
+});
+
+router.post('/change-password', requireAuth, asyncHandler(async (req, res) => {
+  await changePassword(req.user.id, req.body?.currentPassword, req.body?.newPassword);
+  res.json({ success: true });
+}));
+
+export default router;

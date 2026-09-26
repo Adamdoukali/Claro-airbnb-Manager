@@ -10,8 +10,9 @@ import {
   Send, 
   Zap, 
   Globe, 
-  Sparkles 
+  Sparkles
 } from 'lucide-react';
+import { api } from '../api';
 
 export default function GenerateCodeModal({ 
   property, 
@@ -49,20 +50,16 @@ export default function GenerateCodeModal({
     setLoading(true);
 
     try {
-      const apiKey = localStorage.getItem('hospitable_api_key') || '';
-      const res = await fetch('/api/police/codes', {
+      const data = await api('/api/police/codes', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
+        body: {
           propertyId: property?.id,
           guestName: guestName || 'Voyageur Invité',
           bookingId: selectedBookingId || null,
           guestPhone: guestPhone || '',
-          language,
-          apiKey
-        })
+          language
+        }
       });
-      const data = await res.json();
       setCreatedReg(data);
       setMessageText(data.automatedMessage || '');
       if (onCreatedCode) onCreatedCode(data);
@@ -79,18 +76,16 @@ export default function GenerateCodeModal({
     if (!createdReg) return;
 
     try {
-      const res = await fetch('/api/police/message/preview', {
+      const data = await api('/api/police/message/preview', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
+        body: {
           registrationId: createdReg.id,
           bookingId: selectedBookingId || createdReg.bookingId,
           propertyId: property?.id,
           guestName: guestName || createdReg.guestName,
           language: newLang
-        })
+        }
       });
-      const data = await res.json();
       if (data.message) {
         setMessageText(data.message);
       }
@@ -115,31 +110,18 @@ export default function GenerateCodeModal({
 
   // Send via Hospitable API
   const handleSendViaHospitable = async () => {
-    const apiKey = localStorage.getItem('hospitable_api_key');
-    if (!apiKey) {
-      setHospitableStatus({
-        success: false,
-        msg: "Veuillez d'abord configurer votre clé API Hospitable dans le menu en haut."
-      });
-      return;
-    }
-
     setSendingHospitable(true);
     setHospitableStatus(null);
 
     try {
-      const res = await fetch('/api/police/message/send', {
+      const data = await api('/api/police/message/send', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
+        body: {
           registrationId: createdReg.id,
           messageText,
-          channel: 'hospitable',
-          apiKey
-        })
+          channel: 'hospitable'
+        }
       });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "Échec d'envoi");
 
       setHospitableStatus({
         success: true,
@@ -165,15 +147,14 @@ export default function GenerateCodeModal({
     window.open(url, '_blank');
 
     // Mark as sent in system
-    fetch('/api/police/message/send', {
+    api('/api/police/message/send', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        registrationId: createdReg.id,
-        messageText,
-        channel: 'whatsapp'
+      body: { registrationId: createdReg.id, messageText, channel: 'whatsapp' }
+    })
+      .then(data => {
+        if (onCreatedCode) onCreatedCode({ ...createdReg, messageSentAt: data.messageSentAt });
       })
-    });
+      .catch(err => console.error('Error marking message as sent:', err));
   };
 
   return (

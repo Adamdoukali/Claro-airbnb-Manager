@@ -1,179 +1,154 @@
 import ical from 'node-ical';
 import { readDB, writeDB } from './database.js';
+import { newId } from './utils.js';
 
-/**
- * Format a Date object to YYYYMMDD string for iCal all-day events
- */
+function toIsoDay(value) {
+  return new Date(value).toISOString().slice(0, 10);
+}
+
 function formatDateToIcal(dateStr) {
-  const d = new Date(dateStr);
-  const year = d.getUTCFullYear();
-  const month = String(d.getUTCMonth() + 1).padStart(2, '0');
-  const day = String(d.getUTCDate()).padStart(2, '0');
-  return `${year}${month}${day}`;
+  return toIsoDay(dateStr).replace(/-/g, '');
+}
+
+function escapeIcalText(text = '') {
+  return String(text).replace(/\\/g, '\\\\').replace(/;/g, '\\;').replace(/,/g, '\\,').replace(/\r?\n/g, '\\n');
 }
 
 /**
- * Fetch and sync external iCal feeds for a property (Airbnb & Booking.com)
+ * Import one external iCal feed (Airbnb or Booking.com) into the local bookings.
+ * Returns the number of events processed.
  */
+async function importFeed(db, property, url, source) {
+  const parsed = await ical.async.fromURL(url.trim());
+  let count = 0;
+  const seen = new Set();
+
+  for (const key of Object.keys(parsed)) {
+    const ev = parsed[key];
+    if (!ev || ev.type !== 'VEVENT' || !ev.start || !ev.end) continue;
+
+    const checkIn = toIsoDay(ev.start);
+    const checkOut = toIsoDay(ev.end);
+    const externalUid = ev.uid || `${source}_${key}`;
+    seen.add(externalUid);
+
+    // Airbnb exports "Not available" blocks alongside real reservations.
+    const summary = String(ev.summary || '');
+    const isBlock = /not available|indisponible|bloqu/i.test(summary);
+
+    const existing = db.bookings.find(b => b.externalUid === externalUid);
+    if (existing) {
+      existing.checkIn = checkIn;
+      existing.checkOut = checkOut;
+      existing.status = isBlock ? 'blocked' : 'confirmed';
+    } else {
+      db.bookings.push({
+        id: newId('bkg'),
+        propertyId: property.id,
+        source: isBlock ? 'blocked' : source,
+        channel: source,
+        guestName: isBlock ? 'Dates bloquées' : (summary || `Réservation ${source}`),
+        guestEmail: '',
+        guestPhone: '',
+        checkIn,
+        checkOut,
+        status: isBlock ? 'blocked' : 'confirmed',
+        totalPrice: null,
+        currency: 'MAD',
+        notes: ev.description || `Importé depuis le flux iCal ${source}`,
+        externalUid,
+        createdAt: new Date().toISOString()
+      });
+    }
+    count++;
+  }
+
+  // Events that disappeared from the feed were cancelled on the channel.
+  for (const b of db.bookings) {
+    if (b.propertyId === property.id && b.channel === source && b.externalUid && !seen.has(b.externalUid) && b.status !== 'cancelled') {
+      if (b.externalUid.startsWith('hospitable_')) continue;
+      b.status = 'cancelled';
+    }
+  }
+  return count;
+}
+
+/** Fetch and sync the Airbnb and Booking.com iCal feeds of a property. */
 export async function syncPropertyFeeds(propertyId) {
   const db = readDB();
   const property = db.properties.find(p => p.id === propertyId);
-  if (!property) throw new Error("Property not found");
+  if (!property) throw new Error('Logement introuvable');
 
   const results = { airbnb: 0, booking: 0, errors: [] };
+  const feeds = [
+    ['airbnb', property.airbnbIcalUrl],
+    ['booking', property.bookingIcalUrl]
+  ];
 
-  // 1. Sync Airbnb iCal
-  if (property.airbnbIcalUrl && property.airbnbIcalUrl.trim().startsWith('http')) {
+  for (const [source, url] of feeds) {
+    if (!url || !/^https?:\/\//i.test(url.trim())) continue;
+    if (!/\.ics(\?|$)/i.test(url.trim()) && !/ical|calendar/i.test(url)) {
+      results.errors.push(`${source}: l'URL ne ressemble pas à un flux iCal (.ics).`);
+      continue;
+    }
     try {
-      const parsed = await ical.async.fromURL(property.airbnbIcalUrl.trim());
-      let count = 0;
-      for (const k in parsed) {
-        if (!Object.prototype.hasOwnProperty.call(parsed, k)) continue;
-        const ev = parsed[k];
-        if (ev.type === 'VEVENT') {
-          const checkIn = new Date(ev.start).toISOString().split('T')[0];
-          const checkOut = new Date(ev.end).toISOString().split('T')[0];
-          const externalUid = ev.uid || `airbnb_${k}`;
-
-          // Check if already exists
-          const existingIdx = db.bookings.findIndex(b => b.externalUid === externalUid);
-          if (existingIdx >= 0) {
-            db.bookings[existingIdx].checkIn = checkIn;
-            db.bookings[existingIdx].checkOut = checkOut;
-            db.bookings[existingIdx].status = 'confirmed';
-          } else {
-            db.bookings.push({
-              id: `bkg_ab_${Date.now()}_${Math.random().toString(36).substr(2, 4)}`,
-              propertyId: property.id,
-              source: 'airbnb',
-              guestName: ev.summary || 'Réservation Airbnb',
-              guestEmail: '',
-              guestPhone: '',
-              checkIn,
-              checkOut,
-              status: 'confirmed',
-              totalPrice: null,
-              currency: 'MAD',
-              notes: ev.description || 'Importé depuis Airbnb iCal',
-              externalUid,
-              createdAt: new Date().toISOString()
-            });
-          }
-          count++;
-        }
-      }
-      results.airbnb = count;
+      results[source] = await importFeed(db, property, url, source);
     } catch (err) {
-      console.error("Error syncing Airbnb iCal:", err.message);
-      results.errors.push(`Airbnb sync error: ${err.message}`);
+      console.error(`[iCal] ${source} :`, err.message);
+      results.errors.push(`${source}: ${err.message}`);
     }
   }
 
-  // 2. Sync Booking.com iCal
-  if (property.bookingIcalUrl && property.bookingIcalUrl.trim().startsWith('http')) {
-    try {
-      const parsed = await ical.async.fromURL(property.bookingIcalUrl.trim());
-      let count = 0;
-      for (const k in parsed) {
-        if (!Object.prototype.hasOwnProperty.call(parsed, k)) continue;
-        const ev = parsed[k];
-        if (ev.type === 'VEVENT') {
-          const checkIn = new Date(ev.start).toISOString().split('T')[0];
-          const checkOut = new Date(ev.end).toISOString().split('T')[0];
-          const externalUid = ev.uid || `booking_${k}`;
-
-          const existingIdx = db.bookings.findIndex(b => b.externalUid === externalUid);
-          if (existingIdx >= 0) {
-            db.bookings[existingIdx].checkIn = checkIn;
-            db.bookings[existingIdx].checkOut = checkOut;
-            db.bookings[existingIdx].status = 'confirmed';
-          } else {
-            db.bookings.push({
-              id: `bkg_bk_${Date.now()}_${Math.random().toString(36).substr(2, 4)}`,
-              propertyId: property.id,
-              source: 'booking',
-              guestName: ev.summary || 'Réservation Booking.com',
-              guestEmail: '',
-              guestPhone: '',
-              checkIn,
-              checkOut,
-              status: 'confirmed',
-              totalPrice: null,
-              currency: 'MAD',
-              notes: ev.description || 'Importé depuis Booking.com iCal',
-              externalUid,
-              createdAt: new Date().toISOString()
-            });
-          }
-          count++;
-        }
-      }
-      results.booking = count;
-    } catch (err) {
-      console.error("Error syncing Booking.com iCal:", err.message);
-      results.errors.push(`Booking.com sync error: ${err.message}`);
-    }
-  }
-
-  // Update property timestamp
   property.lastSyncAt = new Date().toISOString();
-
-  // Log sync result
   db.syncLogs.unshift({
-    id: `log_${Date.now()}`,
+    id: newId('log'),
     propertyId: property.id,
-    timestamp: new Date().toISOString(),
+    timestamp: property.lastSyncAt,
     source: 'channel_sync',
     status: results.errors.length === 0 ? 'success' : 'partial',
-    message: `Synchronisation terminée: ${results.airbnb} réservations Airbnb, ${results.booking} réservations Booking.com. ${results.errors.join(' | ')}`,
+    message: `iCal : ${results.airbnb} événements Airbnb, ${results.booking} événements Booking.com.${results.errors.length ? ' ' + results.errors.join(' | ') : ''}`,
     eventsCount: results.airbnb + results.booking
   });
+  db.syncLogs = db.syncLogs.slice(0, 50);
 
-  // Limit logs to last 50
-  if (db.syncLogs.length > 50) db.syncLogs = db.syncLogs.slice(0, 50);
-
-  writeDB(db);
+  await writeDB(db);
   return { results, lastSyncAt: property.lastSyncAt };
 }
 
-/**
- * Generate iCal feed string for a given property (to be consumed by Airbnb & Booking.com)
- */
+/** RFC 5545 feed of a property's occupied dates, for Airbnb / Booking.com to subscribe to. */
 export function generatePropertyIcal(propertyId) {
   const db = readDB();
   const property = db.properties.find(p => p.id === propertyId);
-  const bookings = db.bookings.filter(b => b.propertyId === propertyId && b.status !== 'cancelled');
+  if (!property) throw new Error('Logement introuvable');
+
+  const bookings = db.bookings.filter(b => b.propertyId === propertyId && b.status !== 'cancelled' && b.status !== 'pending');
+  const now = new Date().toISOString().replace(/[-:]/g, '').split('.')[0] + 'Z';
 
   const lines = [
     'BEGIN:VCALENDAR',
     'VERSION:2.0',
-    'PRODID:-//Airbnb Morocco Manager//MultiCalendar Sync 1.0//FR',
+    'PRODID:-//Claro Airbnb Manager//Calendar Sync 1.0//FR',
     'CALSCALE:GREGORIAN',
     'METHOD:PUBLISH',
-    `X-WR-CALNAME:${(property?.name || 'Logement').replace(/[^a-zA-Z0-9 ]/g, '')} Calendar`,
+    `X-WR-CALNAME:${escapeIcalText(property.name)}`,
     'X-WR-TIMEZONE:Africa/Casablanca'
   ];
 
-  const now = new Date().toISOString().replace(/[-:]/g, '').split('.')[0] + 'Z';
-
-  bookings.forEach(b => {
-    const startDate = formatDateToIcal(b.checkIn);
-    const endDate = formatDateToIcal(b.checkOut);
-    const summary = b.source === 'blocked' 
-      ? 'Bloqué / Indisponible' 
-      : `Réservé (${b.source.toUpperCase()}${b.guestName ? ' - ' + b.guestName : ''})`;
-
-    lines.push('BEGIN:VEVENT');
-    lines.push(`UID:event_${b.id}@airbnb-morocco-manager.local`);
-    lines.push(`DTSTAMP:${now}`);
-    lines.push(`DTSTART;VALUE=DATE:${startDate}`);
-    lines.push(`DTEND;VALUE=DATE:${endDate}`);
-    lines.push(`SUMMARY:${summary}`);
-    lines.push(`DESCRIPTION:Réservation synchronisée via Airbnb Morocco Manager - Source: ${b.source}`);
-    lines.push('STATUS:CONFIRMED');
-    lines.push('TRANSP:OPAQUE');
-    lines.push('END:VEVENT');
-  });
+  for (const b of bookings) {
+    // Never leak guest names to third-party channels: only availability.
+    const summary = b.status === 'blocked' || b.source === 'blocked' ? 'Not available' : 'Reserved';
+    lines.push(
+      'BEGIN:VEVENT',
+      `UID:event_${b.id}@claro-airbnb-manager`,
+      `DTSTAMP:${now}`,
+      `DTSTART;VALUE=DATE:${formatDateToIcal(b.checkIn)}`,
+      `DTEND;VALUE=DATE:${formatDateToIcal(b.checkOut)}`,
+      `SUMMARY:${summary}`,
+      'STATUS:CONFIRMED',
+      'TRANSP:OPAQUE',
+      'END:VEVENT'
+    );
+  }
 
   lines.push('END:VCALENDAR');
   return lines.join('\r\n');

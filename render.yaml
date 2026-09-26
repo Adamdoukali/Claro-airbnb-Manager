@@ -1,0 +1,27 @@
+# Render.com blueprint - one web service serving the API and the built React client.
+# Set the secret values in the Render dashboard (they are never committed).
+services:
+  - type: web
+    name: claro-airbnb-manager
+    runtime: node
+    plan: starter
+    buildCommand: npm run build
+    startCommand: npm start
+    healthCheckPath: /api/health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: APP_URL
+        sync: false
+      - key: JWT_SECRET
+        generateValue: true
+      - key: ADMIN_EMAIL
+        value: doukali@gmail.com
+      - key: ADMIN_PASSWORD
+        sync: false
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_SERVICE_ROLE_KEY
+        sync: false
+      - key: HOSPITABLE_WEBHOOK_SECRET
+        sync: false

@@ -15,6 +15,7 @@ import {
   Send,
   Sparkles
 } from 'lucide-react';
+import { api } from '../api';
 
 export default function PoliceDashboard({ 
   registrations, 
@@ -58,16 +59,10 @@ export default function PoliceDashboard({
     if (!messageReg) return;
 
     try {
-      const res = await fetch('/api/police/message/preview', {
+      const data = await api('/api/police/message/preview', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          registrationId: messageReg.id,
-          propertyId: property?.id,
-          language: newLang
-        })
+        body: { registrationId: messageReg.id, propertyId: property?.id, language: newLang }
       });
-      const data = await res.json();
       if (data.message) {
         setMessageText(data.message);
       }
@@ -77,31 +72,14 @@ export default function PoliceDashboard({
   };
 
   const handleSendHospitable = async () => {
-    const apiKey = localStorage.getItem('hospitable_api_key');
-    if (!apiKey) {
-      setHospitableStatus({
-        success: false,
-        msg: "Veuillez d'abord configurer votre clé API Hospitable dans le menu supérieur."
-      });
-      return;
-    }
-
     setSendingHospitable(true);
     setHospitableStatus(null);
 
     try {
-      const res = await fetch('/api/police/message/send', {
+      await api('/api/police/message/send', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          registrationId: messageReg.id,
-          messageText,
-          channel: 'hospitable',
-          apiKey
-        })
+        body: { registrationId: messageReg.id, messageText, channel: 'hospitable' }
       });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "Échec d'envoi");
 
       setHospitableStatus({
         success: true,
@@ -124,17 +102,12 @@ export default function PoliceDashboard({
     window.open(url, '_blank');
 
     // Mark sent
-    fetch('/api/police/message/send', {
+    api('/api/police/message/send', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        registrationId: messageReg.id,
-        messageText,
-        channel: 'whatsapp'
-      })
-    }).then(() => {
-      if (onRefresh) onRefresh();
-    });
+      body: { registrationId: messageReg.id, messageText, channel: 'whatsapp' }
+    })
+      .then(() => { if (onRefresh) onRefresh(); })
+      .catch(err => console.error('Error marking message as sent:', err));
   };
 
   const copyMessage = () => {

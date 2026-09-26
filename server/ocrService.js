@@ -1,12 +1,14 @@
 import { createWorker } from 'tesseract.js';
-import * as mrz from 'mrz';
+import { config } from './config.js';
 
 let workerPromise = null;
 
 async function getWorker() {
   if (!workerPromise) {
     workerPromise = (async () => {
-      const worker = await createWorker('eng+fra');
+      // Language files are cached next to this file (server/eng.traineddata, server/fra.traineddata)
+      // so the worker never re-downloads them, whatever the process working directory is.
+      const worker = await createWorker('eng+fra', 1, { cachePath: config.serverDir });
       return worker;
     })();
   }
@@ -232,10 +234,11 @@ function extractMoroccanCINData(rawText, lines) {
 /**
  * Main OCR recognition function
  */
-export async function scanDocumentWithOCR(filePath) {
+export async function scanDocumentWithOCR(input) {
   try {
     const worker = await getWorker();
-    const ret = await worker.recognize(filePath);
+    // `input` is a Buffer (upload kept in memory) or a file path.
+    const ret = await worker.recognize(input);
     const rawText = ret.data.text || '';
     const lines = rawText.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
 

@@ -31,3 +31,17 @@ server/generated_pdfs/*
 # IDE
 .vscode/
 .idea/
+
+# Local database (contains guest data) - use Supabase in production
+server/data.json
+server/data.json.tmp
+
+# Vercel
+.vercel
+
+.vercel
+.env*
+
+# Keep the documented example (the .env* rule above would hide it)
+!server/.env.example
+!.env.example

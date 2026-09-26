@@ -1,34 +1,29 @@
 import React from 'react';
-import { ExternalLink, RefreshCw, ShieldCheck, Home, Settings, UserCheck, Zap } from 'lucide-react';
+import { ExternalLink, Home, UserCheck, Zap, LogOut, Plus, ChevronDown, SlidersHorizontal } from 'lucide-react';
 
-export default function Header({ 
-  currentProperty, 
-  onOpenSettings, 
-  onOpenSync, 
+export default function Header({
+  user,
+  properties = [],
+  currentProperty,
+  onSelectProperty,
+  onAddProperty,
+  onOpenSettings,
+  onOpenAutomation,
+  automationActive = false,
   onOpenHospitable,
-  activeTab, 
+  onLogout,
   setActiveTab,
   onSwitchToGuestPortal
 }) {
   return (
     <header className="airbnb-header">
       <div className="header-container">
-        {/* Left: Claro Brand & Airbnb Manager */}
+        {/* Left: brand */}
         <div className="logo-area" onClick={() => setActiveTab('calendar')} style={{ cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 14 }}>
-          {/* Claro Logo */}
-          <div style={{ display: 'flex', alignItems: 'center' }}>
-            <img 
-              src="/claro.png" 
-              alt="Claro Digital" 
-              style={{ height: 32, width: 'auto', objectFit: 'contain' }} 
-            />
-          </div>
-
+          <img src="/claro.png" alt="Claro Digital" style={{ height: 32, width: 'auto', objectFit: 'contain' }} />
           <div style={{ width: 1, height: 26, background: '#E5E7EB' }} />
-
-          {/* Airbnb Manager */}
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <svg width="28" height="28" viewBox="0 0 32 32" fill="#81172E" xmlns="http://www.w3.org/2000/svg">
+            <svg width="28" height="28" viewBox="0 0 32 32" fill="#81172E" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
               <path d="M16 1c2.008 0 3.463.963 4.751 3.269l.533 1.025c1.954 3.83 4.14 8.784 5.394 13.064 1.258 4.293.992 7.788-.737 9.873C24.195 30.334 21.436 31 18.067 31c-2.316 0-4.32-.47-6.07-1.402-1.748.932-3.753 1.402-6.064 1.402-3.37 0-6.128-.666-7.874-2.769-1.73-2.085-1.996-5.58-.738-9.873 1.254-4.28 3.44-9.234 5.394-13.064l.533-1.025C4.537 1.963 5.992 1 8 1c2.25 0 3.882 1.246 5.25 3.52C14.618 2.246 16.25 1 18.5 1zm-.5 18.5c-2.209 0-4 1.791-4 4s1.791 4 4 4 4-1.791 4-4-1.791-4-4-4z"/>
             </svg>
             <div className="logo-text" style={{ color: '#81172E' }}>
@@ -38,72 +33,81 @@ export default function Header({
           </div>
         </div>
 
-        {/* Center: Current Property Capsule */}
-        <div className="property-capsule" onClick={onOpenSettings} title="Cliquez pour configurer ce logement">
-          <Home size={18} color="#81172E" />
-          <span className="property-name">{currentProperty?.name || "Riad Dar Anbar"}</span>
-          <span className="property-tag">{currentProperty?.city || "Marrakech"}</span>
+        {/* Center: property switcher */}
+        <div className="property-switcher">
+          {properties.length > 1 ? (
+            <label className="property-capsule" title="Changer de logement">
+              <Home size={18} color="#81172E" />
+              <select
+                className="property-select"
+                value={currentProperty?.id || ''}
+                onChange={(e) => onSelectProperty(e.target.value)}
+                aria-label="Logement actif"
+              >
+                {properties.map(p => (
+                  <option key={p.id} value={p.id}>{p.name}{p.city ? ` · ${p.city}` : ''}</option>
+                ))}
+              </select>
+              <ChevronDown size={16} color="#717171" />
+            </label>
+          ) : (
+            <div className="property-capsule" onClick={currentProperty ? onOpenSettings : onAddProperty} title={currentProperty ? 'Configurer ce logement' : 'Ajouter un logement'}>
+              <Home size={18} color="#81172E" />
+              <span className="property-name">{currentProperty?.name || 'Ajouter un logement'}</span>
+              {currentProperty?.city && <span className="property-tag">{currentProperty.city}</span>}
+            </div>
+          )}
+          <button type="button" className="btn btn-secondary btn-icon btn-sm" onClick={onAddProperty} title="Ajouter un logement">
+            <Plus size={16} />
+          </button>
         </div>
 
-
-        {/* Right: Actions & Switch to Airbnb */}
+        {/* Right: actions */}
         <div className="header-actions">
-          {/* Quick Switch to Airbnb Calendar Button */}
           {currentProperty?.airbnbUrl && (
-            <a 
-              href={currentProperty.airbnbUrl} 
-              target="_blank" 
-              rel="noopener noreferrer" 
-              className="switch-airbnb-btn"
-              title="Basculer vers le calendrier Airbnb"
-            >
+            <a href={currentProperty.airbnbUrl} target="_blank" rel="noopener noreferrer" className="switch-airbnb-btn" title="Ouvrir l'annonce Airbnb">
               <span>Basculer sur Airbnb</span>
               <ExternalLink size={14} />
             </a>
           )}
 
-          {/* Hospitable Integration */}
-          <button 
-            type="button" 
-            className="btn btn-secondary btn-sm btn-pill" 
+          <button
+            type="button"
+            className="btn btn-secondary btn-sm btn-pill"
             onClick={onOpenHospitable}
-            title="Intégration Hospitable (my.hospitable.com)"
-            style={{ borderColor: '#C7D2FE', background: '#EEF2FF', color: '#4338CA' }}
+            title="Intégration Hospitable (Airbnb & Booking.com)"
+            style={{ borderColor: '#C7D2FE', background: '#EEF2FF', color: '#4338CA', fontWeight: 600, display: 'flex', alignItems: 'center', gap: 6 }}
           >
             <Zap size={14} color="#4F46E5" />
             <span>Hospitable</span>
           </button>
 
-          {/* Sync Trigger Modal Button */}
-          <button 
-            type="button" 
-            className="btn btn-secondary btn-sm btn-pill" 
-            onClick={onOpenSync}
-            title="Gérer la synchronisation des calendriers Airbnb et Booking"
-          >
-            <RefreshCw size={15} color="#003580" />
-            <span>Sync iCal</span>
-          </button>
-
-          {/* Test Guest Check-in portal directly */}
-          <button 
-            type="button" 
-            className="btn btn-rausch btn-sm btn-pill"
-            onClick={onSwitchToGuestPortal}
-            title="Tester le portail d'enregistrement voyageur"
-          >
+          <button type="button" className="btn btn-rausch btn-sm btn-pill" onClick={onSwitchToGuestPortal} title="Tester le portail voyageur">
             <UserCheck size={16} />
             <span>Portail Voyageur</span>
           </button>
 
-          {/* Settings */}
-          <button 
+          {currentProperty && (
+            <button type="button" className="btn btn-secondary btn-icon" onClick={onOpenSettings} title="Paramètres du logement et fiches de police">
+              <Home size={18} />
+            </button>
+          )}
+
+          <button
             type="button"
-            className="btn btn-secondary btn-icon" 
-            onClick={onOpenSettings}
-            title="Paramètres de l'hébergement et police"
+            className="btn btn-secondary btn-icon"
+            onClick={onOpenAutomation}
+            title="Paramètres & automatisations (messages automatiques, rappels, synchronisation)"
+            style={{ position: 'relative' }}
           >
-            <Settings size={18} />
+            <SlidersHorizontal size={18} />
+            {automationActive && (
+              <span style={{ position: 'absolute', top: 6, right: 6, width: 8, height: 8, borderRadius: '50%', background: '#16A34A', border: '2px solid #FFF' }} aria-label="Automatisations actives" />
+            )}
+          </button>
+
+          <button type="button" className="btn btn-secondary btn-icon" onClick={onLogout} title={`Se déconnecter (${user?.email || ''})`}>
+            <LogOut size={18} />
           </button>
         </div>
       </div>

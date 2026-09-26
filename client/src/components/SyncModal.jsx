@@ -8,8 +8,8 @@ export default function SyncModal({ property, onClose, onSaveProperty, onTrigger
   const [copied, setCopied] = useState(false);
   const [saveSuccess, setSaveSuccess] = useState(false);
 
-  // Generate public export iCal URL
-  const exportUrl = `${window.location.protocol}//${window.location.hostname}:5000/api/calendar/export/${property?.id}.ics`;
+  // Export iCal URL (same origin as the app, protected by the property's private token)
+  const exportUrl = `${window.location.origin}/api/calendar/export/${property?.id}.ics?token=${property?.icalToken || ''}`;
 
   const copyExportUrl = () => {
     navigator.clipboard.writeText(exportUrl);

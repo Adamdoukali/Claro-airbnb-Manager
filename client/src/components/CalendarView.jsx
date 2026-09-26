@@ -39,65 +39,73 @@ export default function CalendarView({
     setCurrentDate(new Date());
   };
 
-  // Generate calendar days
+  // Generate calendar days (local dates: never go through toISOString, which is UTC)
+  const toDateStr = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
   const firstDayOfMonth = new Date(year, month, 1);
   const lastDayOfMonth = new Date(year, month + 1, 0);
-  
+
   // Starting day index (Monday as 0)
   let startDayOfWeek = firstDayOfMonth.getDay() - 1;
   if (startDayOfWeek === -1) startDayOfWeek = 6; // Sunday
 
   const daysInMonth = lastDayOfMonth.getDate();
-  const daysInPrevMonth = new Date(year, month, 0).getDate();
-
+  const todayStr = toDateStr(new Date());
   const calendarDays = [];
 
-  // Previous month trailing days
-  for (let i = startDayOfWeek - 1; i >= 0; i--) {
-    const dayNum = daysInPrevMonth - i;
-    const dateStr = new Date(year, month - 1, dayNum).toISOString().split('T')[0];
-    calendarDays.push({
-      dateStr,
-      dayNum,
-      isCurrentMonth: false
-    });
+  for (let i = startDayOfWeek; i > 0; i--) {
+    const d = new Date(year, month, 1 - i);
+    calendarDays.push({ dateStr: toDateStr(d), dayNum: d.getDate(), isCurrentMonth: false });
   }
-
-  // Current month days
-  const todayStr = new Date().toISOString().split('T')[0];
   for (let i = 1; i <= daysInMonth; i++) {
-    // Format YYYY-MM-DD
-    const dateStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(i).padStart(2, '0')}`;
-    calendarDays.push({
-      dateStr,
-      dayNum: i,
-      isCurrentMonth: true,
-      isToday: dateStr === todayStr
-    });
+    const dateStr = toDateStr(new Date(year, month, i));
+    calendarDays.push({ dateStr, dayNum: i, isCurrentMonth: true, isToday: dateStr === todayStr });
   }
-
-  // Next month leading days to complete grid (multiples of 7)
   const remaining = (7 - (calendarDays.length % 7)) % 7;
   for (let i = 1; i <= remaining; i++) {
-    const dateStr = new Date(year, month + 1, i).toISOString().split('T')[0];
-    calendarDays.push({
-      dateStr,
-      dayNum: i,
-      isCurrentMonth: false
-    });
+    const d = new Date(year, month + 1, i);
+    calendarDays.push({ dateStr: toDateStr(d), dayNum: d.getDate(), isCurrentMonth: false });
+  }
+
+  // Split into week rows. Each booking becomes ONE continuous bar per week (Hospitable-style):
+  // it starts in the middle of the check-in cell and ends in the middle of the check-out cell,
+  // so a same-day turnover shares the cell with the next guest.
+  const weeks = [];
+  let prevLanes = new Map(); // booking id -> lane in the previous week (keeps a long stay on one line)
+  for (let i = 0; i < calendarDays.length; i += 7) {
+    const days = calendarDays.slice(i, i + 7);
+    const weekStart = days[0].dateStr;
+    const weekEnd = days[6].dateStr;
+    const sorted = [...bookings]
+      .filter(b => b.checkIn && b.checkOut && b.checkIn <= weekEnd && b.checkOut >= weekStart)
+      .sort((a, b) =>
+        (prevLanes.has(a.id) ? prevLanes.get(a.id) : Infinity) - (prevLanes.has(b.id) ? prevLanes.get(b.id) : Infinity)
+        || a.checkIn.localeCompare(b.checkIn) || a.checkOut.localeCompare(b.checkOut));
+
+    const laneEnds = []; // right edge (0..1) of the last bar in each lane
+    const bars = [];
+    const lanesThisWeek = new Map();
+    for (const b of sorted) {
+      const startsHere = b.checkIn >= weekStart;
+      const endsHere = b.checkOut <= weekEnd;
+      const left = startsHere ? (days.findIndex(d => d.dateStr === b.checkIn) + 0.5) / 7 : 0;
+      const right = endsHere ? (days.findIndex(d => d.dateStr === b.checkOut) + 0.5) / 7 : 1;
+      if (right - left <= 0) continue;
+      let lane = prevLanes.has(b.id) ? prevLanes.get(b.id) : -1;
+      if (lane === -1 || (laneEnds[lane] || 0) > left + 1e-6) lane = laneEnds.findIndex(end => end <= left + 1e-6);
+      if (lane === -1) lane = laneEnds.length;
+      while (laneEnds.length <= lane) laneEnds.push(0);
+      laneEnds[lane] = right;
+      lanesThisWeek.set(b.id, lane);
+      bars.push({ booking: b, left, width: right - left, lane, startsHere, endsHere });
+    }
+    weeks.push({ days, bars, lanes: Math.max(1, laneEnds.length) });
+    prevLanes = lanesThisWeek;
   }
 
   const monthNames = [
     "Janvier", "Février", "Mars", "Avril", "Mai", "Juin",
     "Juillet", "Août", "Septembre", "Octobre", "Novembre", "Décembre"
   ];
-
-  // Helper to find bookings for a date
-  const getBookingsForDate = (dateStr) => {
-    return bookings.filter(b => {
-      return dateStr >= b.checkIn && dateStr < b.checkOut;
-    });
-  };
 
   const getChipClass = (source) => {
     switch (source) {
@@ -111,8 +119,9 @@ export default function CalendarView({
 
   const getSourceName = (source) => {
     switch (source) {
-      case 'airbnb': return 'Airbnb';
-      case 'booking': return 'Booking.com';
+      case 'airbnb': return 'Airbnb (Hospitable)';
+      case 'booking': return 'Booking.com (Hospitable)';
+      case 'vrbo': return 'VRBO (Hospitable)';
       case 'direct': return 'Direct';
       case 'blocked': return 'Bloqué';
       default: return source;
@@ -145,11 +154,11 @@ export default function CalendarView({
           <div className="calendar-legend">
             <div className="legend-item">
               <span className="legend-dot dot-airbnb"></span>
-              <span>Airbnb</span>
+              <span>Airbnb (Hospitable)</span>
             </div>
             <div className="legend-item">
               <span className="legend-dot dot-booking"></span>
-              <span>Booking.com</span>
+              <span>Booking.com (Hospitable)</span>
             </div>
             <div className="legend-item">
               <span className="legend-dot dot-direct"></span>
@@ -167,9 +176,10 @@ export default function CalendarView({
             onClick={onSyncClick} 
             className="btn btn-secondary btn-sm"
             disabled={isSyncing}
+            title="Synchroniser toutes les réservations via Hospitable"
           >
             <RefreshCw size={14} className={isSyncing ? "spinning" : ""} />
-            <span>{isSyncing ? "Synchronisation..." : "Actualiser iCal"}</span>
+            <span>{isSyncing ? "Synchronisation..." : "Actualiser Hospitable"}</span>
           </button>
 
           {/* Add / Block button */}
@@ -184,10 +194,10 @@ export default function CalendarView({
         </div>
       </div>
 
-      {/* Direct link notice banner */}
+      {/* Hospitable Aggregation Notice banner */}
       <div style={{
-        background: '#FFF8F6',
-        border: '1px solid #FFE0E5',
+        background: '#EEF2FF',
+        border: '1px solid #C7D2FE',
         borderRadius: 12,
         padding: '12px 18px',
         marginBottom: 18,
@@ -199,17 +209,18 @@ export default function CalendarView({
       }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
           <div style={{
-            background: '#81172E',
+            background: '#4F46E5',
             color: '#FFF',
-            padding: '4px 8px',
+            padding: '4px 9px',
             borderRadius: 6,
             fontSize: '0.75rem',
-            fontWeight: 700
+            fontWeight: 800,
+            letterSpacing: '0.5px'
           }}>
-            AIRBNB LINK
+            HOSPITABLE AGGREGATOR
           </div>
-          <span style={{ fontSize: '0.9rem', color: '#484848' }}>
-            Ce calendrier unifié bloque automatiquement les dates entre <strong>Airbnb</strong> et <strong>Booking.com</strong>.
+          <span style={{ fontSize: '0.9rem', color: '#1E1B4B' }}>
+            Flux multi-canaux unifié : Les réservations et disponibilités <strong>Airbnb</strong> et <strong>Booking.com</strong> sont centralisées en temps réel via l'API Hospitable.
           </span>
         </div>
         {property?.airbnbUrl && (
@@ -218,62 +229,59 @@ export default function CalendarView({
             target="_blank"
             rel="noopener noreferrer"
             className="btn btn-outline btn-sm"
-            style={{ borderColor: '#81172E', color: '#81172E' }}
+            style={{ borderColor: '#4F46E5', color: '#4F46E5', background: '#FFF' }}
           >
-
-            <span>Ouvrir mon calendrier Airbnb</span>
+            <span>Ouvrir Airbnb</span>
             <ExternalLink size={14} />
           </a>
         )}
       </div>
 
-      {/* Calendar Grid */}
+      {/* Calendar Grid: day cells + one continuous bar per booking and per week */}
       <div className="calendar-grid">
-        {/* Weekday headers */}
-        {['Lun', 'Mar', 'Mer', 'Jeu', 'Ven', 'Sam', 'Dim'].map(day => (
-          <div key={day} className="calendar-weekday">{day}</div>
-        ))}
+        <div className="calendar-weekdays">
+          {['Lun', 'Mar', 'Mer', 'Jeu', 'Ven', 'Sam', 'Dim'].map(day => (
+            <div key={day} className="calendar-weekday">{day}</div>
+          ))}
+        </div>
 
-        {/* Days cells */}
-        {calendarDays.map((day, idx) => {
-          const dayBookings = getBookingsForDate(day.dateStr);
-
-          return (
-            <div 
-              key={idx} 
-              className={`calendar-day-cell ${!day.isCurrentMonth ? 'other-month' : ''} ${day.isToday ? 'today' : ''}`}
-              onClick={() => {
-                if (dayBookings.length === 0) {
-                  onAddBookingClick(day.dateStr);
-                }
-              }}
-            >
-              <div className="day-number">
-                {day.isToday ? (
-                  <span className="today-pill">{day.dayNum}</span>
-                ) : (
-                  <span>{day.dayNum}</span>
-                )}
-              </div>
-
-              {/* Booking chips */}
-              {dayBookings.map((bkg) => (
-                <div 
-                  key={bkg.id}
-                  className={`booking-chip ${getChipClass(bkg.source)}`}
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    setSelectedBooking(bkg);
-                  }}
-                  title={`${bkg.guestName} (${getSourceName(bkg.source)}) - Du ${bkg.checkIn} au ${bkg.checkOut}`}
+        {weeks.map((week, wIdx) => (
+          <div key={wIdx} className="calendar-week" style={{ '--lanes': week.lanes }}>
+            {week.days.map((day) => {
+              const occupied = bookings.some(b => day.dateStr >= b.checkIn && day.dateStr < b.checkOut);
+              return (
+                <div
+                  key={day.dateStr}
+                  className={`calendar-day-cell ${!day.isCurrentMonth ? 'other-month' : ''} ${day.isToday ? 'today' : ''}`}
+                  onClick={() => { if (!occupied) onAddBookingClick(day.dateStr); }}
+                  title={occupied ? undefined : `Ajouter / bloquer le ${day.dateStr}`}
                 >
-                  {bkg.source === 'blocked' ? <Lock size={10} /> : <User size={10} />}
-                  <span>{bkg.guestName || getSourceName(bkg.source)}</span>
+                  <div className="day-number">
+                    {day.isToday ? <span className="today-pill">{day.dayNum}</span> : <span>{day.dayNum}</span>}
+                  </div>
                 </div>
+              );
+            })}
+
+            <div className="calendar-bars">
+              {week.bars.map(({ booking: bkg, left, width, lane, startsHere, endsHere }) => (
+                <button
+                  type="button"
+                  key={bkg.id}
+                  className={`booking-bar ${getChipClass(bkg.source)} ${startsHere ? 'bar-start' : ''} ${endsHere ? 'bar-end' : ''}`}
+                  style={{ left: `${left * 100}%`, width: `${width * 100}%`, '--lane': lane }}
+                  onClick={(e) => { e.stopPropagation(); setSelectedBooking(bkg); }}
+                  title={`${bkg.guestName || getSourceName(bkg.source)} · ${getSourceName(bkg.source)} · du ${bkg.checkIn} au ${bkg.checkOut}`}
+                >
+                  <span className="bar-avatar">
+                    {bkg.source === 'blocked' ? <Lock size={11} /> : ((bkg.guestName || '').trim().charAt(0).toUpperCase() || <User size={11} />)}
+                  </span>
+                  <span className="bar-name">{bkg.guestName || getSourceName(bkg.source)}</span>
+                </button>
               ))}
             </div>
-          );
-        })}
+          </div>
+        ))}
       </div>
 
       {/* Booking Details Modal */}

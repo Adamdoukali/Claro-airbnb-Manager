@@ -1,0 +1,10 @@
+# Uploaded to Vercel only what the build needs
+node_modules
+client/node_modules
+server/node_modules
+client/dist
+server/uploads
+server/generated_pdfs
+server/data.json
+server/.env
+.git
