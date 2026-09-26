@@ -352,7 +352,7 @@ export default function GuestCheckin({ initialCode, onExitToHost }) {
         </div>
 
         {/* Error Alert */}
-        {error && (
+        {error && step !== 1 && (
           <div style={{
             margin: '16px 24px 0 24px',
             background: '#FEE2E2',

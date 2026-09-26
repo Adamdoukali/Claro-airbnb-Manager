@@ -34,6 +34,7 @@ export default function App() {
   const [activeTab, setActiveTab] = useState('calendar'); // 'calendar' | 'police' | 'guest_portal'
   const [isSyncing, setIsSyncing] = useState(false);
   const [guestPortalCode, setGuestPortalCode] = useState('');
+  const [portalOpenedByHost, setPortalOpenedByHost] = useState(false); // guests never see host controls
 
   // Modals
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
@@ -54,6 +55,7 @@ export default function App() {
     const code = params.get('guestCode') || params.get('code');
     if (code) {
       setGuestPortalCode(code);
+      setPortalOpenedByHost(false);
       setActiveTab('guest_portal');
     }
   }, []);
@@ -243,10 +245,10 @@ export default function App() {
     return (
       <GuestCheckin
         initialCode={guestPortalCode}
-        onExitToHost={() => {
+        onExitToHost={portalOpenedByHost && authStatus === 'authenticated' ? () => {
           setActiveTab('calendar');
           if (authStatus === 'authenticated') fetchData();
-        }}
+        } : undefined}
       />
     );
   }
@@ -259,7 +261,7 @@ export default function App() {
     return (
       <LoginScreen
         onLogin={(u) => { setUser(u); setAuthStatus('authenticated'); }}
-        onGuestAccess={() => { setGuestPortalCode(''); setActiveTab('guest_portal'); }}
+        onGuestAccess={() => { setGuestPortalCode(''); setPortalOpenedByHost(false); setActiveTab('guest_portal'); }}
       />
     );
   }
@@ -283,7 +285,7 @@ export default function App() {
         onOpenHospitable={() => setIsHospitableOpen(true)}
         onLogout={handleLogout}
         setActiveTab={setActiveTab}
-        onSwitchToGuestPortal={() => { setGuestPortalCode(''); setActiveTab('guest_portal'); }}
+        onSwitchToGuestPortal={() => { setGuestPortalCode(''); setPortalOpenedByHost(true); setActiveTab('guest_portal'); }}
       />
 
       <nav className="sub-nav">
@@ -300,7 +302,7 @@ export default function App() {
             {pendingPoliceCount > 0 && <span className="badge-count">{pendingPoliceCount} en attente</span>}
           </button>
 
-          <button type="button" className="nav-tab" onClick={() => { setGuestPortalCode(''); setActiveTab('guest_portal'); }}>
+          <button type="button" className="nav-tab" onClick={() => { setGuestPortalCode(''); setPortalOpenedByHost(true); setActiveTab('guest_portal'); }}>
             <UserCheck size={18} color="#81172E" />
             <span>Aperçu Portail Voyageurs</span>
           </button>
@@ -348,7 +350,7 @@ export default function App() {
                 registrations={policeRegistrations}
                 property={currentProperty}
                 onOpenCodeGenerator={() => { setSelectedBookingForCode(null); setIsGenerateCodeOpen(true); }}
-                onOpenGuestPortalWithCode={(code) => { setGuestPortalCode(code); setActiveTab('guest_portal'); }}
+                onOpenGuestPortalWithCode={(code) => { setGuestPortalCode(code); setPortalOpenedByHost(true); setActiveTab('guest_portal'); }}
                 onRefresh={() => fetchData(currentProperty.id)}
               />
             )}
@@ -413,7 +415,7 @@ export default function App() {
               return exists ? prev.map(r => (r.id === newReg.id ? { ...r, ...newReg } : r)) : [newReg, ...prev];
             });
           }}
-          onOpenPortalWithCode={(code) => { setGuestPortalCode(code); setActiveTab('guest_portal'); }}
+          onOpenPortalWithCode={(code) => { setGuestPortalCode(code); setPortalOpenedByHost(true); setActiveTab('guest_portal'); }}
         />
       )}
     </div>
