@@ -73,20 +73,49 @@ export default function SettingsModal({ properties = [], onClose }) {
   const [automation, setAutomation] = useState(DEFAULT_AUTOMATION);
   const [offer, setOffer] = useState({ enabled: true, title: '', agencyName: '', description: '', mapsUrl: '', phone: '', whatsapp: '' });
   const [features, setFeatures] = useState({});
-  // Editable guest message templates
-  const [templates, setTemplates] = useState({ fr: '', en: '', reminderFr: '', reminderEn: '' });
+  // Editable guest message templates (simple mode = plain text body; advanced = full template with placeholders)
+  const EMPTY_TPL = { fr: '', en: '', reminderFr: '', reminderEn: '', frBody: '', enBody: '', reminderFrBody: '', reminderEnBody: '' };
+  const [templates, setTemplates] = useState(EMPTY_TPL);
   const [tplDefaults, setTplDefaults] = useState(null);
+  const [tplParts, setTplParts] = useState(null);
   const [placeholders, setPlaceholders] = useState([]);
   const [tplLang, setTplLang] = useState('fr');
   const [tplKind, setTplKind] = useState('checkin'); // 'checkin' | 'reminder'
   const [tplPreview, setTplPreview] = useState('');
   const [tplOpen, setTplOpen] = useState(false);
+  const [tplAdvanced, setTplAdvanced] = useState(false);
   const tplRef = React.useRef(null);
   const tplKey = tplKind === 'reminder' ? (tplLang === 'en' ? 'reminderEn' : 'reminderFr') : tplLang;
+  const bodyKey = tplKey + 'Body';
   const tplValue = templates[tplKey] || '';
+  const bodyValue = templates[bodyKey] || '';
   const tplIsDefault = !tplValue;
+  const bodyIsDefault = !bodyValue;
+  const anyCustom = Object.values(templates).some(Boolean);
+  const partsNow = tplParts?.[tplLang]?.[tplKind] || null;
+  // simple editor: the body is split in two areas around the link block, so the host never sees a placeholder
+  const effectiveBody = bodyValue || tplDefaults?.[bodyKey] || '';
+  // What the host types lives in local state (so the cursor never jumps); the stored body is assembled from it.
+  const [bodyEdit, setBodyEdit] = useState({});
+  const splitBody = (text) => {
+    const [b, a] = text.includes('{{link_block}}') ? text.split('{{link_block}}') : [text, ''];
+    return { before: b.replace(/\s+$/, ''), after: a.replace(/^\s+/, '') };
+  };
+  const current = bodyEdit[bodyKey] || splitBody(effectiveBody);
+  const beforeLink = current.before;
+  const afterLink = current.after;
+  const setBodyParts = (before, after) => {
+    setBodyEdit(e => ({ ...e, [bodyKey]: { before, after } }));
+    const joined = after.trim() ? `${before.trimEnd()}\n\n{{link_block}}\n\n${after.trimStart()}` : before.trimEnd();
+    setTemplates(t => ({ ...t, [bodyKey]: joined }));
+  };
+  const resetBody = () => {
+    setBodyEdit(e => { const n = { ...e }; delete n[bodyKey]; return n; });
+    setTemplates(t => ({ ...t, [bodyKey]: '' }));
+    setTplPreview('');
+  };
 
-  const loadTemplateDefaults = () => api('/api/settings/message-defaults').then(d => { setTplDefaults(d.defaults); setPlaceholders(d.placeholders); }).catch(() => {});
+  const loadTemplateDefaults = () => api('/api/settings/message-defaults').then(d => { setTplDefaults(d.defaults); setPlaceholders(d.placeholders); setTplParts(d.parts || null); }).catch(() => {});
   const insertPlaceholder = (ph) => {
     const el = tplRef.current;
     const base = tplValue || tplDefaults?.[tplKey] || '';
@@ -98,7 +127,7 @@ export default function SettingsModal({ properties = [], onClose }) {
   };
   const previewTemplate = async () => {
     try {
-      const d = await api('/api/settings/message-preview', { method: 'POST', body: { template: tplValue, language: tplLang, kind: tplKind } });
+      const d = await api('/api/settings/message-preview', { method: 'POST', body: tplAdvanced ? { template: tplValue, language: tplLang, kind: tplKind } : { template: effectiveBody, language: tplLang, kind: tplKind, mode: 'simple' } });
       setTplPreview(d.message);
     } catch (err) { setError(err.message); }
   };
@@ -393,12 +422,12 @@ export default function SettingsModal({ properties = [], onClose }) {
               />
 
               {/* 3b. Editable guest message */}
-              <div className={`feature-row ${!tplIsDefault ? 'feature-on' : ''}`}>
+              <div className={`feature-row ${anyCustom ? 'feature-on' : ''}`}>
                 <div className="feature-head">
                   <div className="feature-icon" style={{ background: '#FDF2F4', color: '#81172E' }}><MessageSquareText size={18} /></div>
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <div className="feature-title">Message envoyé aux voyageurs
-                      <span className="feature-badge">{(templates.fr || templates.en || templates.reminderFr || templates.reminderEn) ? 'Personnalisé' : 'Texte par défaut'}</span>
+                      <span className="feature-badge">{anyCustom ? 'Personnalisé' : 'Texte par défaut'}</span>
                     </div>
                     <div className="text-xs text-muted">Le texte du message de check-in (et du rappel) que reçoivent les voyageurs, en français et en anglais. Il est enregistré dans la base de données et s'applique immédiatement aux voyageurs en attente.</div>
                   </div>
@@ -406,7 +435,7 @@ export default function SettingsModal({ properties = [], onClose }) {
                 </div>
                 {tplOpen && (
                   <div className="feature-body">
-                    <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center', marginBottom: 10 }}>
+                    <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center', marginBottom: 12 }}>
                       <div className="tv-filter">
                         <button type="button" className={`tv-filter-btn ${tplKind === 'checkin' ? 'on' : ''}`} onClick={() => { setTplKind('checkin'); setTplPreview(''); }}>Message de check-in</button>
                         <button type="button" className={`tv-filter-btn ${tplKind === 'reminder' ? 'on' : ''}`} onClick={() => { setTplKind('reminder'); setTplPreview(''); }}>Rappel</button>
@@ -415,36 +444,74 @@ export default function SettingsModal({ properties = [], onClose }) {
                         <button type="button" className={`tv-filter-btn ${tplLang === 'fr' ? 'on' : ''}`} onClick={() => { setTplLang('fr'); setTplPreview(''); }}>🇫🇷 Français</button>
                         <button type="button" className={`tv-filter-btn ${tplLang === 'en' ? 'on' : ''}`} onClick={() => { setTplLang('en'); setTplPreview(''); }}>🇬🇧 English</button>
                       </div>
-                      <span className="text-xs text-muted">{tplIsDefault ? 'Texte par défaut affiché (modifiez-le pour le personnaliser)' : 'Texte personnalisé'}</span>
-                    </div>
-
-                    <div className="text-xs text-muted" style={{ marginBottom: 6 }}>Cliquez pour insérer un champ automatique :</div>
-                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 8 }}>
-                      {placeholders.map(([ph, label]) => (
-                        <button key={ph} type="button" className="chip chip-indigo" style={{ border: 'none', cursor: 'pointer' }} title={label} onClick={() => insertPlaceholder(ph)}>{ph}</button>
-                      ))}
-                    </div>
-
-                    <textarea
-                      ref={tplRef}
-                      className="form-input"
-                      rows={14}
-                      style={{ fontFamily: 'inherit', fontSize: '0.85rem', lineHeight: 1.45 }}
-                      value={tplValue || tplDefaults?.[tplKey] || ''}
-                      onChange={e => setTemplates(t => ({ ...t, [tplKey]: e.target.value }))}
-                      placeholder="Chargement du texte par défaut…"
-                    />
-                    <div className="text-xs text-muted" style={{ marginTop: 6 }}>
-                      Le lien du formulaire et le code d'accès sont toujours ajoutés : si vous oubliez {'{{portal_url}}'} ou {'{{access_code}}'}, ils sont ajoutés automatiquement à la fin.
-                    </div>
-
-                    <div style={{ display: 'flex', gap: 8, marginTop: 10, flexWrap: 'wrap' }}>
-                      <button type="button" className="btn btn-secondary btn-sm" onClick={previewTemplate}><Eye size={14} /> Aperçu avec un exemple</button>
-                      <button type="button" className="btn btn-secondary btn-sm" disabled={tplIsDefault} onClick={() => { setTemplates(t => ({ ...t, [tplKey]: '' })); setTplPreview(''); }}>
-                        <RotateCcw size={14} /> Revenir au texte par défaut
+                      <button type="button" className="btn btn-secondary btn-sm" style={{ marginLeft: 'auto' }} onClick={() => { setTplAdvanced(v => !v); setTplPreview(''); }}>
+                        {tplAdvanced ? 'Mode simple' : 'Mode avancé'}
                       </button>
-                      <span className="text-xs text-muted" style={{ alignSelf: 'center' }}>Puis « Enregistrer » en bas.</span>
                     </div>
+
+                    {!tplAdvanced ? (
+                      <>
+                        <p className="text-xs text-muted" style={{ marginBottom: 10 }}>
+                          Écrivez votre texte normalement. Les parties grises (salutation avec le nom et les dates, lien du formulaire, code, signature) sont remplies automatiquement pour chaque voyageur : vous n'avez rien à y mettre.
+                        </p>
+                        <div className="tpl-fixed">{partsNow?.greeting || '…'}</div>
+                        <label className="form-label" style={{ marginTop: 10 }}>Votre texte</label>
+                        <textarea
+                          className="form-input"
+                          rows={tplKind === 'reminder' ? 4 : 8}
+                          style={{ fontFamily: 'inherit', fontSize: '0.85rem', lineHeight: 1.45 }}
+                          value={beforeLink}
+                          onChange={e => setBodyParts(e.target.value, afterLink)}
+                          placeholder="Chargement du texte par défaut…"
+                        />
+                        <div className="tpl-fixed" style={{ marginTop: 10 }}>{partsNow?.linkBlock || '…'}</div>
+                        <label className="form-label" style={{ marginTop: 10 }}>Texte après le lien <span className="text-muted" style={{ fontWeight: 400 }}>(optionnel)</span></label>
+                        <textarea
+                          className="form-input"
+                          rows={tplKind === 'reminder' ? 2 : 8}
+                          style={{ fontFamily: 'inherit', fontSize: '0.85rem', lineHeight: 1.45 }}
+                          value={afterLink}
+                          onChange={e => setBodyParts(beforeLink, e.target.value)}
+                          placeholder="Ex : conditions importantes, règles de la maison…"
+                        />
+                        <div className="tpl-fixed" style={{ marginTop: 10 }}>{partsNow?.signature || '…'}</div>
+                        <div style={{ display: 'flex', gap: 8, marginTop: 12, flexWrap: 'wrap' }}>
+                          <button type="button" className="btn btn-secondary btn-sm" onClick={previewTemplate}><Eye size={14} /> Aperçu avec un exemple</button>
+                          <button type="button" className="btn btn-secondary btn-sm" disabled={bodyIsDefault} onClick={resetBody}>
+                            <RotateCcw size={14} /> Revenir au texte par défaut
+                          </button>
+                          <span className="text-xs text-muted" style={{ alignSelf: 'center' }}>{bodyIsDefault ? 'Texte par défaut' : 'Texte personnalisé'} · puis « Enregistrer » en bas.</span>
+                        </div>
+                      </>
+                    ) : (
+                      <>
+                        <p className="text-xs text-muted" style={{ marginBottom: 6 }}>
+                          Mode avancé : vous contrôlez tout le message. Cliquez sur un champ pour l'insérer à l'endroit du curseur. Si un texte simple existe pour cette langue, il a priorité : effacez-le d'abord.
+                        </p>
+                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 8 }}>
+                          {placeholders.map(([ph, label]) => (
+                            <button key={ph} type="button" className="chip chip-indigo" style={{ border: 'none', cursor: 'pointer' }} title={label} onClick={() => insertPlaceholder(ph)}>{ph}</button>
+                          ))}
+                        </div>
+                        <textarea
+                          ref={tplRef}
+                          className="form-input"
+                          rows={14}
+                          style={{ fontFamily: 'inherit', fontSize: '0.85rem', lineHeight: 1.45 }}
+                          value={tplValue || tplDefaults?.[tplKey] || ''}
+                          onChange={e => setTemplates(t => ({ ...t, [tplKey]: e.target.value }))}
+                        />
+                        <div className="text-xs text-muted" style={{ marginTop: 6 }}>
+                          Le lien et le code sont toujours ajoutés : si {'{{portal_url}}'} ou {'{{access_code}}'} manquent, ils sont ajoutés à la fin.
+                        </div>
+                        <div style={{ display: 'flex', gap: 8, marginTop: 10, flexWrap: 'wrap' }}>
+                          <button type="button" className="btn btn-secondary btn-sm" onClick={previewTemplate}><Eye size={14} /> Aperçu avec un exemple</button>
+                          <button type="button" className="btn btn-secondary btn-sm" disabled={tplIsDefault} onClick={() => { setTemplates(t => ({ ...t, [tplKey]: '' })); setTplPreview(''); }}>
+                            <RotateCcw size={14} /> Revenir au texte par défaut
+                          </button>
+                        </div>
+                      </>
+                    )}
 
                     {tplPreview && (
                       <div className="preview-box" style={{ whiteSpace: 'pre-wrap', fontSize: '0.84rem', lineHeight: 1.45 }}>{tplPreview}</div>

@@ -2,7 +2,7 @@ import { Router } from 'express';
 import fs from 'fs';
 import path from 'path';
 import { getSettings, updateSettings, readDB, writeDB, DEFAULT_GUEST_OFFER } from '../database.js';
-import { MESSAGE_PLACEHOLDERS, defaultMessageTemplates, renderTemplate, generateFullAutomatedMessage, generateReminderMessage } from '../messages.js';
+import { MESSAGE_PLACEHOLDERS, TEMPLATE_KEYS, defaultMessageTemplates, renderTemplate, generateFullAutomatedMessage, generateReminderMessage, sampleParts } from '../messages.js';
 import { refreshPendingMessages } from '../registrationService.js';
 import { getBaseUrl } from '../utils.js';
 import { requireAuth } from '../auth.js';
@@ -45,20 +45,44 @@ router.get('/diagnostics', requireRole('admin'), asyncHandler(async (_req, res) 
   });
 }));
 
+const SAMPLE = { guestName: 'Sara Benali', propertyName: 'Naya - Elegant Modern /Pool', city: 'Tanger', accessCode: '482913', hostName: 'Claro Conciergerie', checkIn: '2026-11-03', checkOut: '2026-11-07' };
+
 /** Built-in message texts (with placeholder names) + the placeholder list, for the editor. */
-router.get('/message-defaults', requireRole('admin'), (_req, res) => {
-  res.json({ defaults: defaultMessageTemplates(), placeholders: MESSAGE_PLACEHOLDERS });
+router.get('/message-defaults', requireRole('admin'), (req, res) => {
+  const portal = `${getBaseUrl(req)}/?guestCode=${SAMPLE.accessCode}`;
+  const base = { ...SAMPLE, portalUrl: portal };
+  res.json({
+    defaults: defaultMessageTemplates(),
+    placeholders: MESSAGE_PLACEHOLDERS,
+    // fixed parts shown around the plain-text editor (rendered with sample data)
+    parts: {
+      fr: { checkin: sampleParts(base, 'fr', 'checkin'), reminder: sampleParts(base, 'fr', 'reminder') },
+      en: { checkin: sampleParts(base, 'en', 'checkin'), reminder: sampleParts(base, 'en', 'reminder') }
+    }
+  });
 });
 
-const SAMPLE = { guestName: 'Sara Benali', propertyName: 'Naya - Elegant Modern /Pool', city: 'Tanger', accessCode: '482913', hostName: 'Claro Conciergerie', checkIn: '2026-11-03', checkOut: '2026-11-07' };
 
 /** Render a template with sample data without saving it. */
 router.post('/message-preview', requireRole('admin'), (req, res) => {
-  const template = str(req.body?.template, 5000);
+  const template = str(req.body?.template, 6000);
   const kind = req.body?.kind === 'reminder' ? 'reminder' : 'checkin';
   const language = req.body?.language === 'en' ? 'en' : 'fr';
   const portal = `${getBaseUrl(req)}/?guestCode=${SAMPLE.accessCode}`;
   const base = { ...SAMPLE, portalUrl: portal, language, __ignoreCustom: true };
+  if (req.body?.mode === 'simple') {
+    // plain body: wrap it with the generated greeting / link block / signature
+    const p = sampleParts(base, language, kind);
+    const text = template.trim();
+    const withLink = text.includes('{{link_block}}') ? text.replace('{{link_block}}', p.linkBlock) : `${text}
+
+${p.linkBlock}`;
+    return res.json({ message: `${p.greeting}
+
+${withLink}
+
+${p.signature}`.trim() });
+  }
   if (!template) {
     return res.json({ message: kind === 'reminder' ? generateReminderMessage(base) : generateFullAutomatedMessage(base) });
   }
@@ -81,8 +105,8 @@ router.put('/', requireRole('admin'), asyncHandler(async (req, res) => {
   if (body.messageTemplates && typeof body.messageTemplates === 'object') {
     const cur = getSettings().messageTemplates || {};
     const next = { ...cur };
-    for (const k of ['fr', 'en', 'reminderFr', 'reminderEn']) {
-      if (body.messageTemplates[k] !== undefined) next[k] = str(body.messageTemplates[k], 5000);
+    for (const k of TEMPLATE_KEYS) {
+      if (body.messageTemplates[k] !== undefined) next[k] = str(body.messageTemplates[k], 6000);
     }
     templatesChanged = JSON.stringify(next) !== JSON.stringify(cur);
     patch.messageTemplates = next;

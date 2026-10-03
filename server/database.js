@@ -59,7 +59,7 @@ export const DEFAULT_SETTINGS = {
   guestOffer: { ...DEFAULT_GUEST_OFFER },
   features: { ...DEFAULT_FEATURES },
   // Editable guest message templates (empty = built-in text). See messages.js for placeholders.
-  messageTemplates: { fr: '', en: '', reminderFr: '', reminderEn: '' }
+  messageTemplates: { fr: '', en: '', reminderFr: '', reminderEn: '', frBody: '', enBody: '', reminderFrBody: '', reminderEnBody: '' }
 };
 
 
@@ -72,7 +72,7 @@ export function normalizeSettings(raw = {}) {
     automation: normalizeAutomation(rest.automation),
     guestOffer: { ...DEFAULT_GUEST_OFFER, ...(rest.guestOffer && typeof rest.guestOffer === 'object' ? rest.guestOffer : {}) },
     features: { ...DEFAULT_FEATURES, ...(rest.features && typeof rest.features === 'object' ? rest.features : {}) },
-    messageTemplates: { fr: '', en: '', reminderFr: '', reminderEn: '', ...(rest.messageTemplates && typeof rest.messageTemplates === 'object' ? rest.messageTemplates : {}) }
+    messageTemplates: { fr: '', en: '', reminderFr: '', reminderEn: '', frBody: '', enBody: '', reminderFrBody: '', reminderEnBody: '', ...(rest.messageTemplates && typeof rest.messageTemplates === 'object' ? rest.messageTemplates : {}) }
   };
 }
 
