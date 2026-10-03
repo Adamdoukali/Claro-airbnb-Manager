@@ -102,7 +102,10 @@ export function normalizeProperty(hp) {
   const airbnbListing = listings.find(l => l.channel === 'airbnb');
   return {
     hospitableId: hp.id,
-    name: str(hp.name || hp.public_name || 'Logement Hospitable', 120),
+    // The public listing title (what guests see on Airbnb / Booking) is the property name;
+    // Hospitable's internal label ("D18", "Marina#40") is kept as a short nickname.
+    name: str(hp.public_name || hp.name || 'Logement Hospitable', 120),
+    nickname: str(hp.name && hp.name !== hp.public_name ? hp.name : '', 60),
     city: str(addr.city || hp.city || '', 80),
     address: [addr.street, addr.city, addr.country].filter(Boolean).join(', ') || str(hp.address, 200) || '',
     picture: hp.picture || hp.image_url || null,
@@ -173,6 +176,7 @@ export async function syncPropertiesFromHospitable(apiKey) {
       Object.assign(existing, {
         hospitableId: data.hospitableId,
         name: data.name,
+        nickname: data.nickname,
         city: data.city || existing.city,
         address: data.address || existing.address,
         airbnbUrl: data.airbnbUrl || existing.airbnbUrl,
@@ -200,8 +204,16 @@ export async function syncPropertiesFromHospitable(apiKey) {
     }
   }
 
+  const remoteIds = new Set(remote.map(hp => hp.id));
+  const missing = [];
+  for (const p of db.properties) {
+    if (p.hospitableId && !remoteIds.has(p.hospitableId)) { p.hospitableMissing = true; missing.push(p.name); }
+    else if (p.hospitableMissing) delete p.hospitableMissing;
+  }
+  db.settings = { ...db.settings, lastPropertySyncAt: new Date().toISOString() };
+
   await writeDB(db);
-  return { success: true, totalProperties: remote.length, importedCount, updatedCount, properties: db.properties };
+  return { success: true, totalProperties: remote.length, importedCount, updatedCount, missing, properties: db.properties };
 }
 
 /**

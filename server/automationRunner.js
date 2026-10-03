@@ -1,5 +1,5 @@
 import { readDB, writeDB } from './database.js';
-import { getActiveHospitableApiKey, sendHospitableMessage, syncHospitableReservations } from './hospitableService.js';
+import { getActiveHospitableApiKey, sendHospitableMessage, syncHospitableReservations, syncPropertiesFromHospitable } from './hospitableService.js';
 import { generateReminderMessage } from './messages.js';
 import { autoMessageDecision, reminderDecision, todayIsoDate } from './automation.js';
 import { portalUrl } from './utils.js';
@@ -39,6 +39,13 @@ async function runAutomationOnce({ baseUrl = '', trigger = 'manual', dryRun = fa
       report.errors.push('Synchronisation : clé API Hospitable absente.');
     } else {
       try {
+        // Listing names / new properties change rarely: refresh them once an hour.
+        const lastProps = Date.parse(db.settings.lastPropertySyncAt || 0) || 0;
+        if (Date.now() - lastProps > 60 * 60 * 1000) {
+          const ps = await syncPropertiesFromHospitable();
+          report.properties = { total: ps.totalProperties, imported: ps.importedCount, updated: ps.updatedCount, missing: ps.missing };
+          db = readDB();
+        }
         const r = await syncHospitableReservations({ baseUrl, logOnlyChanges: true });
         report.sync = {
           totalReservations: r.totalReservations, addedCount: r.addedCount,

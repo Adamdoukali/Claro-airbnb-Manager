@@ -31,9 +31,6 @@ export default function HospitableModal({ property, onClose, onSyncSuccess, onOp
   const [syncedListings, setSyncedListings] = useState([]);
 
   const webhookUrl = `${window.location.origin}/api/integrations/hospitable/webhook`;
-  const automatedMessageTemplate = `Bonjour %guest_first_name% ! 🇲🇦 Bienvenue à %property_name%.
-Conformément à la réglementation marocaine (DGSN), merci de compléter votre fiche de police en 30 secondes avant votre arrivée :
-${window.location.origin}/?guestCode=%reservation_code%`;
 
   // Fetch current server settings on mount
   useEffect(() => {

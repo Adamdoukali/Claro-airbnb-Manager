@@ -48,7 +48,7 @@ export default function Header({
                 aria-label="Logement actif"
               >
                 {properties.map(p => (
-                  <option key={p.id} value={p.id}>{p.name}{p.city ? ` · ${p.city}` : ''}</option>
+                  <option key={p.id} value={p.id}>{p.nickname ? `${p.nickname} · ` : ''}{p.name}{p.hospitableMissing ? ' (retiré de Hospitable)' : ''}</option>
                 ))}
               </select>
               <ChevronDown size={16} color="#717171" />
@@ -57,6 +57,7 @@ export default function Header({
             <div className="property-capsule" onClick={currentProperty ? onOpenSettings : onAddProperty} title={currentProperty ? 'Configurer ce logement' : 'Ajouter un logement'}>
               <Home size={18} color="#81172E" />
               <span className="property-name">{currentProperty?.name || 'Ajouter un logement'}</span>
+              {currentProperty?.nickname && <span className="property-tag">{currentProperty.nickname}</span>}
               {currentProperty?.city && <span className="property-tag">{currentProperty.city}</span>}
             </div>
           )}
