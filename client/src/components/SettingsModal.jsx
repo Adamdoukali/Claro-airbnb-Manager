@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import {
   SlidersHorizontal, MessageSquare, BellRing, RefreshCw, Languages, Home, Check,
-  AlertTriangle, Eye, Play, Clock, ShieldCheck, Lock, Car, FlaskConical, Users
+  AlertTriangle, Eye, Play, Clock, ShieldCheck, Lock, Car, FlaskConical, Users, MessageSquareText, RotateCcw
 } from 'lucide-react';
 import { api } from '../api';
 
@@ -73,6 +73,35 @@ export default function SettingsModal({ properties = [], onClose }) {
   const [automation, setAutomation] = useState(DEFAULT_AUTOMATION);
   const [offer, setOffer] = useState({ enabled: true, title: '', agencyName: '', description: '', mapsUrl: '', phone: '', whatsapp: '' });
   const [features, setFeatures] = useState({});
+  // Editable guest message templates
+  const [templates, setTemplates] = useState({ fr: '', en: '', reminderFr: '', reminderEn: '' });
+  const [tplDefaults, setTplDefaults] = useState(null);
+  const [placeholders, setPlaceholders] = useState([]);
+  const [tplLang, setTplLang] = useState('fr');
+  const [tplKind, setTplKind] = useState('checkin'); // 'checkin' | 'reminder'
+  const [tplPreview, setTplPreview] = useState('');
+  const [tplOpen, setTplOpen] = useState(false);
+  const tplRef = React.useRef(null);
+  const tplKey = tplKind === 'reminder' ? (tplLang === 'en' ? 'reminderEn' : 'reminderFr') : tplLang;
+  const tplValue = templates[tplKey] || '';
+  const tplIsDefault = !tplValue;
+
+  const loadTemplateDefaults = () => api('/api/settings/message-defaults').then(d => { setTplDefaults(d.defaults); setPlaceholders(d.placeholders); }).catch(() => {});
+  const insertPlaceholder = (ph) => {
+    const el = tplRef.current;
+    const base = tplValue || tplDefaults?.[tplKey] || '';
+    if (!el) { setTemplates(t => ({ ...t, [tplKey]: base + ph })); return; }
+    const start = el.selectionStart ?? base.length, end = el.selectionEnd ?? base.length;
+    const next = base.slice(0, start) + ph + base.slice(end);
+    setTemplates(t => ({ ...t, [tplKey]: next }));
+    setTimeout(() => { el.focus(); el.setSelectionRange(start + ph.length, start + ph.length); }, 0);
+  };
+  const previewTemplate = async () => {
+    try {
+      const d = await api('/api/settings/message-preview', { method: 'POST', body: { template: tplValue, language: tplLang, kind: tplKind } });
+      setTplPreview(d.message);
+    } catch (err) { setError(err.message); }
+  };
   const [users, setUsers] = useState(null);
   const [newUser, setNewUser] = useState({ email: '', password: '', role: 'assistant' });
   const [userError, setUserError] = useState('');
@@ -115,6 +144,8 @@ export default function SettingsModal({ properties = [], onClose }) {
         setAutomation({ ...DEFAULT_AUTOMATION, ...(s.automation || {}) });
         if (s.guestOffer) setOffer(prev => ({ ...prev, ...s.guestOffer }));
         setFeatures(s.features || {});
+        if (s.messageTemplates) setTemplates(prev => ({ ...prev, ...s.messageTemplates }));
+        loadTemplateDefaults();
         if (s.features?.multiUser) loadUsers();
         setDefaultLanguage(s.defaultLanguage || 'fr');
         setHospitableConnected(Boolean(s.hospitableConnected && s.hasKey));
@@ -150,6 +181,7 @@ export default function SettingsModal({ properties = [], onClose }) {
           defaultLanguage,
           guestOffer: offer,
           features,
+          messageTemplates: templates,
           automation: {
             autoMessageEnabled: automation.autoMessageEnabled,
             autoMessagePropertyIds: automation.autoMessagePropertyIds,
@@ -164,6 +196,8 @@ export default function SettingsModal({ properties = [], onClose }) {
       });
       setAutomation({ ...DEFAULT_AUTOMATION, ...(data.settings?.automation || {}) });
       setFeatures(data.settings?.features || features);
+      if (data.settings?.messageTemplates) setTemplates(data.settings.messageTemplates);
+      if (data.refreshedMessages) setTplPreview(p => p); // keep preview; messages of pending guests were re-rendered server-side
       if (data.settings?.features?.multiUser) loadUsers();
       setSaved(true);
       setTimeout(() => setSaved(false), 1800);
@@ -357,6 +391,67 @@ export default function SettingsModal({ properties = [], onClose }) {
                 checked={automation.autoSyncEnabled}
                 onChange={v => patch({ autoSyncEnabled: v })}
               />
+
+              {/* 3b. Editable guest message */}
+              <div className={`feature-row ${!tplIsDefault ? 'feature-on' : ''}`}>
+                <div className="feature-head">
+                  <div className="feature-icon" style={{ background: '#FDF2F4', color: '#81172E' }}><MessageSquareText size={18} /></div>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div className="feature-title">Message envoyé aux voyageurs
+                      <span className="feature-badge">{(templates.fr || templates.en || templates.reminderFr || templates.reminderEn) ? 'Personnalisé' : 'Texte par défaut'}</span>
+                    </div>
+                    <div className="text-xs text-muted">Le texte du message de check-in (et du rappel) que reçoivent les voyageurs, en français et en anglais. Il est enregistré dans la base de données et s'applique immédiatement aux voyageurs en attente.</div>
+                  </div>
+                  <button type="button" className="btn btn-secondary btn-sm" onClick={() => setTplOpen(v => !v)}>{tplOpen ? 'Réduire' : 'Modifier'}</button>
+                </div>
+                {tplOpen && (
+                  <div className="feature-body">
+                    <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center', marginBottom: 10 }}>
+                      <div className="tv-filter">
+                        <button type="button" className={`tv-filter-btn ${tplKind === 'checkin' ? 'on' : ''}`} onClick={() => { setTplKind('checkin'); setTplPreview(''); }}>Message de check-in</button>
+                        <button type="button" className={`tv-filter-btn ${tplKind === 'reminder' ? 'on' : ''}`} onClick={() => { setTplKind('reminder'); setTplPreview(''); }}>Rappel</button>
+                      </div>
+                      <div className="tv-filter">
+                        <button type="button" className={`tv-filter-btn ${tplLang === 'fr' ? 'on' : ''}`} onClick={() => { setTplLang('fr'); setTplPreview(''); }}>🇫🇷 Français</button>
+                        <button type="button" className={`tv-filter-btn ${tplLang === 'en' ? 'on' : ''}`} onClick={() => { setTplLang('en'); setTplPreview(''); }}>🇬🇧 English</button>
+                      </div>
+                      <span className="text-xs text-muted">{tplIsDefault ? 'Texte par défaut affiché (modifiez-le pour le personnaliser)' : 'Texte personnalisé'}</span>
+                    </div>
+
+                    <div className="text-xs text-muted" style={{ marginBottom: 6 }}>Cliquez pour insérer un champ automatique :</div>
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 8 }}>
+                      {placeholders.map(([ph, label]) => (
+                        <button key={ph} type="button" className="chip chip-indigo" style={{ border: 'none', cursor: 'pointer' }} title={label} onClick={() => insertPlaceholder(ph)}>{ph}</button>
+                      ))}
+                    </div>
+
+                    <textarea
+                      ref={tplRef}
+                      className="form-input"
+                      rows={14}
+                      style={{ fontFamily: 'inherit', fontSize: '0.85rem', lineHeight: 1.45 }}
+                      value={tplValue || tplDefaults?.[tplKey] || ''}
+                      onChange={e => setTemplates(t => ({ ...t, [tplKey]: e.target.value }))}
+                      placeholder="Chargement du texte par défaut…"
+                    />
+                    <div className="text-xs text-muted" style={{ marginTop: 6 }}>
+                      Le lien du formulaire et le code d'accès sont toujours ajoutés : si vous oubliez {'{{portal_url}}'} ou {'{{access_code}}'}, ils sont ajoutés automatiquement à la fin.
+                    </div>
+
+                    <div style={{ display: 'flex', gap: 8, marginTop: 10, flexWrap: 'wrap' }}>
+                      <button type="button" className="btn btn-secondary btn-sm" onClick={previewTemplate}><Eye size={14} /> Aperçu avec un exemple</button>
+                      <button type="button" className="btn btn-secondary btn-sm" disabled={tplIsDefault} onClick={() => { setTemplates(t => ({ ...t, [tplKey]: '' })); setTplPreview(''); }}>
+                        <RotateCcw size={14} /> Revenir au texte par défaut
+                      </button>
+                      <span className="text-xs text-muted" style={{ alignSelf: 'center' }}>Puis « Enregistrer » en bas.</span>
+                    </div>
+
+                    {tplPreview && (
+                      <div className="preview-box" style={{ whiteSpace: 'pre-wrap', fontSize: '0.84rem', lineHeight: 1.45 }}>{tplPreview}</div>
+                    )}
+                  </div>
+                )}
+              </div>
 
               {/* 4. Language */}
               <div className="feature-row">

@@ -84,6 +84,32 @@ export function upsertRegistration({
   return { reg, created: true, portalUrl: link };
 }
 
+/**
+ * Re-render the stored message of every pending registration (after the host edits the templates
+ * or changes the default language). Completed forms are left untouched. Does not persist.
+ */
+export function refreshPendingMessages(db, baseUrl) {
+  let count = 0;
+  for (const reg of db.policeRegistrations) {
+    if (reg.status === 'completed') continue;
+    const property = db.properties.find(p => p.id === reg.propertyId);
+    const booking = reg.bookingId ? db.bookings.find(b => b.id === reg.bookingId) : null;
+    reg.automatedMessage = generateFullAutomatedMessage({
+      guestName: reg.guestName,
+      propertyName: property?.name,
+      city: property?.city,
+      accessCode: reg.accessCode,
+      portalUrl: portalUrl(baseUrl, reg.accessCode),
+      hostName: property?.hostName,
+      checkIn: booking?.checkIn,
+      checkOut: booking?.checkOut,
+      language: db.settings.defaultLanguage || 'fr'
+    });
+    count++;
+  }
+  return count;
+}
+
 /** Storage keys (ID scans, signature, PDF) owned by a registration. */
 export function registrationFileKeys(reg) {
   const keys = new Set();

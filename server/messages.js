@@ -1,4 +1,40 @@
 import { formatDateFr } from './utils.js';
+import { getSettings } from './database.js';
+
+/**
+ * Placeholders usable in the editable templates (Paramètres > Message automatique).
+ * {{portal_url}} and {{access_code}} are mandatory: if a template omits them the link block is appended.
+ */
+export const MESSAGE_PLACEHOLDERS = [
+  ['{{first_name}}', 'Prénom du voyageur'],
+  ['{{guest_name}}', 'Nom complet du voyageur'],
+  ['{{property_name}}', 'Nom du logement'],
+  ['{{city}}', 'Ville'],
+  ['{{check_in}}', "Date d'arrivée"],
+  ['{{check_out}}', 'Date de départ'],
+  ['{{portal_url}}', 'Lien du formulaire de check-in'],
+  ['{{access_code}}', "Code d'accès"],
+  ['{{host_name}}', "Nom de l'hôte"]
+];
+
+export function renderTemplate(template, vars) {
+  let out = String(template || '').replace(/\{\{\s*([a-z_]+)\s*\}\}/gi, (_, k) => (vars[k] !== undefined && vars[k] !== null ? String(vars[k]) : ''));
+  if (vars.portal_url && !out.includes(vars.portal_url)) {
+    out += `\n\n🔗 ${vars.link_label}: ${vars.portal_url}\n🔑 ${vars.code_label}: ${vars.access_code}`;
+  } else if (vars.access_code && !out.includes(String(vars.access_code))) {
+    out += `\n🔑 ${vars.code_label}: ${vars.access_code}`;
+  }
+  return out.trim();
+}
+
+/** Custom templates saved in settings (empty string = built-in default). */
+export function getMessageTemplates() {
+  const t = getSettings().messageTemplates || {};
+  return { fr: t.fr || '', en: t.en || '', reminderFr: t.reminderFr || '', reminderEn: t.reminderEn || '' };
+}
+
+const isPh = v => String(v || '').startsWith('{{');
+
 
 /**
  * Build the check-in message sent to a guest (French, English or bilingual).
@@ -15,15 +51,23 @@ export function generateFullAutomatedMessage({
   hostName,
   checkIn,
   checkOut,
-  language = 'fr'
+  language = 'fr',
+  __ignoreCustom = false
 }) {
-  const name = guestName ? guestName.split(' ')[0] : '';
-  const datesFr = checkIn && checkOut ? ` du ${formatDateFr(checkIn)} au ${formatDateFr(checkOut)}` : '';
+  const name = guestName ? (isPh(guestName) ? '{{first_name}}' : guestName.split(' ')[0]) : '';
+  const fmt = d => (isPh(d) ? d : formatDateFr(d));
+  const datesFr = checkIn && checkOut ? ` du ${fmt(checkIn)} au ${fmt(checkOut)}` : '';
   const datesEn = checkIn && checkOut ? ` from ${checkIn} to ${checkOut}` : '';
   const place = `${propertyName || 'notre hébergement'}${city ? ` (${city})` : ''}`;
   const placeEn = `${propertyName || 'our accommodation'}${city ? ` (${city})` : ''}`;
   const signFr = hostName ? `Cordialement,\n${hostName}` : "L'équipe de l'hébergement";
   const signEn = hostName ? `Kind regards,\n${hostName}` : 'The host team';
+
+  const templates = __ignoreCustom ? { fr: '', en: '' } : getMessageTemplates();
+  const varsFr = { first_name: name, guest_name: guestName || '', property_name: propertyName || '', city: city || '', check_in: fmt(checkIn), check_out: fmt(checkOut), portal_url: portalUrl, access_code: accessCode, host_name: hostName || '', link_label: 'Formulaire de check-in', code_label: "Votre code d'accès" };
+  const varsEn = { ...varsFr, check_in: checkIn || '', check_out: checkOut || '', link_label: 'Check-in form', code_label: 'Your access code' };
+  const customFr = templates.fr ? renderTemplate(templates.fr, varsFr) : null;
+  const customEn = templates.en ? renderTemplate(templates.en, varsEn) : null;
 
   const msgEn = `Hello${name ? ` ${name}` : ''}, welcome to ${placeEn}${datesEn}.
 
@@ -69,24 +113,43 @@ Toute fausse déclaration ou tout manquement à ces exigences pourra entraîner 
 
 ${signFr}`;
 
-  if (language === 'en') return msgEn;
+  const finalFr = customFr || msgFr;
+  const finalEn = customEn || msgEn;
+  if (language === 'en') return finalEn;
   if (language === 'bilingual') {
-    return `${msgFr}\n\n------------------------------\n🇬🇧 English version\n\n${msgEn}`;
+    return `${finalFr}\n\n------------------------------\n🇬🇧 English version\n\n${finalEn}`;
   }
-  return msgFr;
+  return finalFr;
+}
+
+/** Built-in texts rendered with placeholder names: the starting point shown in the settings panel. */
+export function defaultMessageTemplates() {
+  const sample = { guestName: '{{guest_name}}', propertyName: '{{property_name}}', city: '{{city}}', accessCode: '{{access_code}}', portalUrl: '{{portal_url}}', hostName: '{{host_name}}', checkIn: '{{check_in}}', checkOut: '{{check_out}}' };
+  return {
+    fr: generateFullAutomatedMessage({ ...sample, language: 'fr', __ignoreCustom: true }),
+    en: generateFullAutomatedMessage({ ...sample, language: 'en', __ignoreCustom: true }),
+    reminderFr: generateReminderMessage({ ...sample, language: 'fr', __ignoreCustom: true }),
+    reminderEn: generateReminderMessage({ ...sample, language: 'en', __ignoreCustom: true })
+  };
 }
 
 /**
  * Short reminder sent when the check-in form is still pending a few days before arrival.
  */
-export function generateReminderMessage({ guestName, propertyName, accessCode, portalUrl, checkIn, hostName, language = 'fr' }) {
-  const name = guestName ? guestName.split(' ')[0] : '';
+export function generateReminderMessage({ guestName, propertyName, accessCode, portalUrl, checkIn, hostName, language = 'fr', __ignoreCustom = false }) {
+  const name = guestName ? (isPh(guestName) ? '{{first_name}}' : guestName.split(' ')[0]) : '';
+  const fmtR = d => (isPh(d) ? d : formatDateFr(d));
+  const templates = __ignoreCustom ? { reminderFr: '', reminderEn: '' } : getMessageTemplates();
+  const varsFr = { first_name: name, guest_name: guestName || '', property_name: propertyName || '', check_in: fmtR(checkIn), portal_url: portalUrl, access_code: accessCode, host_name: hostName || '', link_label: 'Formulaire de check-in', code_label: "Code d'accès" };
+  const varsEn = { ...varsFr, check_in: checkIn || '', link_label: 'Check-in form', code_label: 'Access code' };
+  const customFr = templates.reminderFr ? renderTemplate(templates.reminderFr, varsFr) : null;
+  const customEn = templates.reminderEn ? renderTemplate(templates.reminderEn, varsEn) : null;
   const place = propertyName || 'votre hébergement';
   const placeEn = propertyName || 'your accommodation';
 
   const msgFr = `Bonjour${name ? ` ${name}` : ''} ! 👋
 
-Petit rappel avant votre arrivée à ${place}${checkIn ? ` le ${formatDateFr(checkIn)}` : ''} : votre formulaire de check-in (obligatoire au Maroc, pièce d'identité valide pour chaque voyageur) n'est pas encore complété.
+Petit rappel avant votre arrivée à ${place}${checkIn ? ` le ${fmtR(checkIn)}` : ''} : votre formulaire de check-in (obligatoire au Maroc, pièce d'identité valide pour chaque voyageur) n'est pas encore complété.
 
 ⚡ 30 secondes suffisent :
 🔗 ${portalUrl}
@@ -106,7 +169,9 @@ Quick reminder before your arrival at ${placeEn}${checkIn ? ` on ${checkIn}` : '
 Thank you and see you soon!
 ${hostName || 'The host team'}`;
 
-  if (language === 'en') return msgEn;
-  if (language === 'bilingual') return `${msgFr}\n\n------------------------------\n🇬🇧\n\n${msgEn}`;
-  return msgFr;
+  const finalFr = customFr || msgFr;
+  const finalEn = customEn || msgEn;
+  if (language === 'en') return finalEn;
+  if (language === 'bilingual') return `${finalFr}\n\n------------------------------\n🇬🇧\n\n${finalEn}`;
+  return finalFr;
 }

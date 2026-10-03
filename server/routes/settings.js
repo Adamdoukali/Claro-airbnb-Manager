@@ -1,7 +1,10 @@
 import { Router } from 'express';
 import fs from 'fs';
 import path from 'path';
-import { getSettings, updateSettings, readDB, DEFAULT_GUEST_OFFER } from '../database.js';
+import { getSettings, updateSettings, readDB, writeDB, DEFAULT_GUEST_OFFER } from '../database.js';
+import { MESSAGE_PLACEHOLDERS, defaultMessageTemplates, renderTemplate, generateFullAutomatedMessage, generateReminderMessage } from '../messages.js';
+import { refreshPendingMessages } from '../registrationService.js';
+import { getBaseUrl } from '../utils.js';
 import { requireAuth } from '../auth.js';
 import { config } from '../config.js';
 import { checkPdfEngine } from '../pdfService.js';
@@ -42,9 +45,48 @@ router.get('/diagnostics', requireRole('admin'), asyncHandler(async (_req, res) 
   });
 }));
 
+/** Built-in message texts (with placeholder names) + the placeholder list, for the editor. */
+router.get('/message-defaults', requireRole('admin'), (_req, res) => {
+  res.json({ defaults: defaultMessageTemplates(), placeholders: MESSAGE_PLACEHOLDERS });
+});
+
+const SAMPLE = { guestName: 'Sara Benali', propertyName: 'Naya - Elegant Modern /Pool', city: 'Tanger', accessCode: '482913', hostName: 'Claro Conciergerie', checkIn: '2026-11-03', checkOut: '2026-11-07' };
+
+/** Render a template with sample data without saving it. */
+router.post('/message-preview', requireRole('admin'), (req, res) => {
+  const template = str(req.body?.template, 5000);
+  const kind = req.body?.kind === 'reminder' ? 'reminder' : 'checkin';
+  const language = req.body?.language === 'en' ? 'en' : 'fr';
+  const portal = `${getBaseUrl(req)}/?guestCode=${SAMPLE.accessCode}`;
+  const base = { ...SAMPLE, portalUrl: portal, language, __ignoreCustom: true };
+  if (!template) {
+    return res.json({ message: kind === 'reminder' ? generateReminderMessage(base) : generateFullAutomatedMessage(base) });
+  }
+  const vars = {
+    first_name: 'Sara', guest_name: SAMPLE.guestName, property_name: SAMPLE.propertyName, city: SAMPLE.city,
+    check_in: language === 'en' ? SAMPLE.checkIn : '03/11/2026', check_out: language === 'en' ? SAMPLE.checkOut : '07/11/2026',
+    portal_url: portal, access_code: SAMPLE.accessCode, host_name: SAMPLE.hostName,
+    link_label: language === 'en' ? 'Check-in form' : 'Formulaire de check-in',
+    code_label: language === 'en' ? 'Your access code' : "Votre code d'accès"
+  };
+  res.json({ message: renderTemplate(template, vars) });
+});
+
 router.put('/', requireRole('admin'), asyncHandler(async (req, res) => {
   const body = req.body || {};
   const patch = {};
+  let templatesChanged = false;
+
+  // Editable guest message templates (empty string = built-in text)
+  if (body.messageTemplates && typeof body.messageTemplates === 'object') {
+    const cur = getSettings().messageTemplates || {};
+    const next = { ...cur };
+    for (const k of ['fr', 'en', 'reminderFr', 'reminderEn']) {
+      if (body.messageTemplates[k] !== undefined) next[k] = str(body.messageTemplates[k], 5000);
+    }
+    templatesChanged = JSON.stringify(next) !== JSON.stringify(cur);
+    patch.messageTemplates = next;
+  }
 
   // Beta feature switches (all off by default). Only known keys, only booleans.
   if (body.features && typeof body.features === 'object') {
@@ -99,8 +141,17 @@ router.put('/', requireRole('admin'), asyncHandler(async (req, res) => {
     patch.automation = next;
   }
 
+  const languageChanged = patch.defaultLanguage !== undefined && patch.defaultLanguage !== getSettings().defaultLanguage;
   const updated = await updateSettings(patch);
-  res.json({ success: true, settings: publicSettings(updated) });
+
+  // Pending guests must receive the new wording: re-render their stored messages now.
+  let refreshed = 0;
+  if (templatesChanged || languageChanged) {
+    const db = readDB();
+    refreshed = refreshPendingMessages(db, getBaseUrl(req));
+    await writeDB(db);
+  }
+  res.json({ success: true, settings: publicSettings(updated), refreshedMessages: refreshed });
 }));
 
 export default router;

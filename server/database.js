@@ -57,7 +57,9 @@ export const DEFAULT_SETTINGS = {
   automation: { ...DEFAULT_AUTOMATION },
   // Recommendation card shown to guests on the final "thank you" page (car rental partner).
   guestOffer: { ...DEFAULT_GUEST_OFFER },
-  features: { ...DEFAULT_FEATURES }
+  features: { ...DEFAULT_FEATURES },
+  // Editable guest message templates (empty = built-in text). See messages.js for placeholders.
+  messageTemplates: { fr: '', en: '', reminderFr: '', reminderEn: '' }
 };
 
 
@@ -69,7 +71,8 @@ export function normalizeSettings(raw = {}) {
     ...rest,
     automation: normalizeAutomation(rest.automation),
     guestOffer: { ...DEFAULT_GUEST_OFFER, ...(rest.guestOffer && typeof rest.guestOffer === 'object' ? rest.guestOffer : {}) },
-    features: { ...DEFAULT_FEATURES, ...(rest.features && typeof rest.features === 'object' ? rest.features : {}) }
+    features: { ...DEFAULT_FEATURES, ...(rest.features && typeof rest.features === 'object' ? rest.features : {}) },
+    messageTemplates: { fr: '', en: '', reminderFr: '', reminderEn: '', ...(rest.messageTemplates && typeof rest.messageTemplates === 'object' ? rest.messageTemplates : {}) }
   };
 }
 
