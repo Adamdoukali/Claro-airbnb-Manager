@@ -110,8 +110,9 @@ function parts({ guestName, propertyName, city, accessCode, portalUrl, hostName,
       ? `🔗 Check-in form: ${portalUrl}\n🔑 Your access code: ${accessCode}`
       : `🔗 Formulaire de check-in : ${portalUrl}\n🔑 Votre code d'accès : ${accessCode}`,
     reminderLinkBlock: en ? `🔗 ${portalUrl}\n🔑 Access code: ${accessCode}` : `🔗 ${portalUrl}\n🔑 Code d'accès : ${accessCode}`,
-    signature: en ? (hostName ? `Kind regards,\n${hostName}` : 'The host team') : (hostName ? `Cordialement,\n${hostName}` : "L'équipe de l'hébergement"),
-    reminderSignature: en ? `Thank you and see you soon!\n${hostName || 'The host team'}` : `Merci et à très bientôt !\n${hostName || "L'équipe de l'hébergement"}`,
+    // Signed "your host" + the listing title (the name guests know from Airbnb / Booking)
+    signature: en ? `Your host,\n${propertyName || 'The host team'}` : `Votre hôte,\n${propertyName || "L'équipe de l'hébergement"}`,
+    reminderSignature: en ? `Thank you and see you soon!\nYour host, ${propertyName || 'The host team'}` : `Merci et à très bientôt !\nVotre hôte, ${propertyName || "L'équipe de l'hébergement"}`,
     vars: {
       first_name: first, guest_name: guestName || '', property_name: propertyName || '', city: city || '',
       check_in: en ? (checkIn || '') : fmt(checkIn), check_out: en ? (checkOut || '') : fmt(checkOut),
