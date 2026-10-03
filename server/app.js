@@ -34,8 +34,25 @@ export async function createApp({ serveClient = true } = {}) {
   app.disable('x-powered-by');
   app.set('trust proxy', 1); // Vercel / Render / Railway sit behind a proxy
 
+  // Content Security Policy: scripts only from this origin (the Vite bundle has no inline script);
+  // inline styles are allowed because React style props are inline. Same policy as vercel.json for the CDN.
   app.use(helmet({
-    contentSecurityPolicy: false, // the Vite bundle uses inline styles; CSP is opt-in for now
+    contentSecurityPolicy: {
+      directives: {
+        defaultSrc: ["'self'"],
+        scriptSrc: ["'self'"],
+        styleSrc: ["'self'", "'unsafe-inline'", 'https://fonts.googleapis.com'],
+        fontSrc: ["'self'", 'https://fonts.gstatic.com', 'data:'],
+        imgSrc: ["'self'", 'data:', 'blob:', 'https:'],
+        connectSrc: ["'self'"],
+        workerSrc: ["'self'", 'blob:'],
+        objectSrc: ["'none'"],
+        baseUri: ["'self'"],
+        formAction: ["'self'"],
+        frameAncestors: ["'self'"],
+        upgradeInsecureRequests: config.isProd ? [] : null
+      }
+    },
     crossOriginEmbedderPolicy: false
   }));
 
@@ -51,7 +68,7 @@ export async function createApp({ serveClient = true } = {}) {
 
   app.use(cookieParser());
   app.use(express.json({
-    limit: '20mb',
+    limit: '6mb', // signatures are small PNGs; ID scans go through multer (15 MB cap)
     verify: (req, _res, buf) => { req.rawBody = buf; } // raw body kept for webhook signatures
   }));
 

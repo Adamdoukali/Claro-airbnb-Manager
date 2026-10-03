@@ -7,7 +7,7 @@ import { sendHospitableMessage, getActiveHospitableApiKey } from '../hospitableS
 import { generateFullAutomatedMessage } from '../messages.js';
 import { upsertRegistration, deleteRegistrationFiles } from '../registrationService.js';
 import { saveFile, readFile, isValidKey } from '../storage.js';
-import { guestLimiter, ocrLimiter, imageUpload } from '../middleware.js';
+import { guestLimiter, ocrLimiter, imageUpload, requireRealImage } from '../middleware.js';
 import { asyncHandler, getBaseUrl, newId, portalUrl, str } from '../utils.js';
 import { requireFeature, requireRole } from '../features.js';
 
@@ -28,10 +28,14 @@ function findByCode(db, code) {
 // Guest portal
 // ---------------------------------------------------------------------------
 
-guestPoliceRouter.get('/verify/:code', guestLimiter, (req, res) => {
+guestPoliceRouter.get('/verify/:code', guestLimiter, asyncHandler(async (req, res) => {
   const db = readDB();
   const reg = findByCode(db, req.params.code);
-  if (!reg) return res.status(404).json({ error: 'Code de réservation invalide ou introuvable.' });
+  if (!reg) {
+    // 6-digit codes: make guessing slow on top of the per-IP limit.
+    await new Promise(r => setTimeout(r, 400 + Math.floor(Math.random() * 300)));
+    return res.status(404).json({ error: 'Code de réservation invalide ou introuvable.' });
+  }
   if (reg.expiresAt && new Date(reg.expiresAt) < new Date() && reg.status !== 'completed') {
     return res.status(410).json({ error: 'Ce code a expiré. Contactez votre hôte pour un nouveau lien.' });
   }
@@ -60,9 +64,9 @@ guestPoliceRouter.get('/verify/:code', guestLimiter, (req, res) => {
     } : null,
     booking: booking ? { checkIn: booking.checkIn, checkOut: booking.checkOut } : null
   });
-});
+}));
 
-guestPoliceRouter.post('/ocr', ocrLimiter, imageUpload.single('idDocument'), asyncHandler(async (req, res) => {
+guestPoliceRouter.post('/ocr', ocrLimiter, imageUpload.single('idDocument'), requireRealImage, asyncHandler(async (req, res) => {
   if (!req.file) return res.status(400).json({ error: 'Aucun document fourni pour la numérisation' });
 
   const db = readDB();
@@ -83,7 +87,7 @@ guestPoliceRouter.post('/ocr', ocrLimiter, imageUpload.single('idDocument'), asy
   res.json({ success: true, documentType: ocr.documentType, data: ocr.data, filePath: key });
 }));
 
-guestPoliceRouter.post('/submit', guestLimiter, imageUpload.single('idDocument'), asyncHandler(async (req, res) => {
+guestPoliceRouter.post('/submit', guestLimiter, imageUpload.single('idDocument'), requireRealImage, asyncHandler(async (req, res) => {
   const db = readDB();
   const { code, guestData, signatureData } = req.body || {};
   const registration = findByCode(db, code);

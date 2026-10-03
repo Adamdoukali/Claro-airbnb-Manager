@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import bcrypt from 'bcryptjs';
 import { listUsers, createUser, deleteUser, findUserByEmail, findUserById, updateUserPassword } from '../database.js';
-import { requireAuth } from '../auth.js';
+import { requireAuth, invalidateSessions } from '../auth.js';
 import { requireFeature, requireRole, ROLES } from '../features.js';
 import { asyncHandler, str } from '../utils.js';
 
@@ -28,6 +28,7 @@ router.put('/:id/password', asyncHandler(async (req, res) => {
   if (password.length < 10) return res.status(400).json({ error: 'Mot de passe : 10 caractères minimum' });
   if (!findUserById(req.params.id)) return res.status(404).json({ error: 'Utilisateur introuvable' });
   await updateUserPassword(req.params.id, await bcrypt.hash(password, 12));
+  await invalidateSessions(req.params.id);
   res.json({ success: true });
 }));
 

@@ -17,7 +17,7 @@ const AGENCY_FIELDS = ['agencyName', 'agencyAddress', 'agencySubAddress', 'agenc
 
 /** Never return the Hospitable token itself, only whether one is stored. */
 export function publicSettings(settings) {
-  const { hospitableApiKey, ...rest } = settings;
+  const { hospitableApiKey, security, ...rest } = settings;
   const key = hospitableApiKey || '';
   return {
     ...rest,

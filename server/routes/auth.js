@@ -12,7 +12,13 @@ router.post('/login', loginLimiter, asyncHandler(async (req, res) => {
   if (!email || !password) {
     return res.status(400).json({ error: 'Email et mot de passe requis' });
   }
-  const user = await authenticate(email, password);
+  let user;
+  try {
+    user = await authenticate(email, password);
+  } catch (err) {
+    if (err.status === 429) return res.status(429).json({ error: err.message });
+    throw err;
+  }
   if (!user) {
     return res.status(401).json({ error: 'Email ou mot de passe incorrect' });
   }

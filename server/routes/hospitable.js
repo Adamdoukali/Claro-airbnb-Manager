@@ -25,7 +25,12 @@ webhookRouter.post('/webhook', webhookLimiter, asyncHandler(async (req, res) => 
     return res.status(401).json({ error: 'Signature du webhook invalide' });
   }
   if (!config.hospitableWebhookSecret) {
-    console.warn('[webhook] HOSPITABLE_WEBHOOK_SECRET absent : signature non vérifiée.');
+    if (config.isProd) {
+      // Without a shared secret anyone could inject fake reservations: refuse until it is configured.
+      console.warn('[webhook] HOSPITABLE_WEBHOOK_SECRET absent : webhook refusé en production.');
+      return res.status(503).json({ error: 'Webhook non configuré : définissez HOSPITABLE_WEBHOOK_SECRET.' });
+    }
+    console.warn('[webhook] HOSPITABLE_WEBHOOK_SECRET absent : signature non vérifiée (développement).');
   }
   const result = await handleHospitableWebhook(req.body, getBaseUrl(req));
   // Hospitable retries on non-2xx: always acknowledge a well-formed delivery.

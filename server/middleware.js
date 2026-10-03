@@ -47,5 +47,25 @@ export const imageUpload = multer({
 export function errorHandler(err, _req, res, _next) {
   const status = err.status || (err instanceof multer.MulterError ? 400 : 500);
   if (status >= 500) console.error('[api]', err);
-  res.status(status).json({ error: err.message || 'Erreur serveur' });
+  // Never echo internal details (database / upstream errors, stack hints) to the client.
+  const message = status >= 500 ? 'Erreur serveur, réessayez dans un instant.' : (err.message || 'Requête invalide');
+  res.status(status).json({ error: message });
+}
+
+/** The declared MIME type comes from the client: check the real file signature too. */
+export function isRealImage(buffer) {
+  if (!buffer || buffer.length < 12) return false;
+  const b = buffer;
+  if (b[0] === 0xFF && b[1] === 0xD8 && b[2] === 0xFF) return 'image/jpeg';
+  if (b[0] === 0x89 && b[1] === 0x50 && b[2] === 0x4E && b[3] === 0x47) return 'image/png';
+  if (b.toString('ascii', 0, 4) === 'RIFF' && b.toString('ascii', 8, 12) === 'WEBP') return 'image/webp';
+  return false;
+}
+
+/** Multer post-check: rejects files whose bytes are not a JPEG / PNG / WebP image. */
+export function requireRealImage(req, res, next) {
+  if (req.file && !isRealImage(req.file.buffer)) {
+    return res.status(400).json({ error: "Le fichier n'est pas une image valide (JPEG, PNG ou WebP)." });
+  }
+  next();
 }
